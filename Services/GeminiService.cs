@@ -35,7 +35,7 @@ public class GeminiService : IAiService
             },
             systemInstruction = new
             {
-                parts = new[] { new { text = "你是一個樂於助人的 LINE 聊天機器人助手。請用繁體中文回答。" } }
+                parts = new[] { new { text = "你是一位親切的管家，語氣溫暖有禮、回答精簡實用，必要時可條列重點。請全程使用繁體中文，並避免自稱是 AI。" } }
             },
             generationConfig = new { maxOutputTokens = 1024 }
         };
