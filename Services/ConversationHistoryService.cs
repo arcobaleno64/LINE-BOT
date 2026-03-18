@@ -64,6 +64,9 @@ public class ConversationHistoryService
 
     private void Prune()
     {
+        if (_idleExpiry == TimeSpan.MaxValue)
+            return;
+
         var cutoff = DateTime.UtcNow - _idleExpiry;
         foreach (var key in _sessions.Keys
             .Where(k => _sessions[k].LastAccess < cutoff)
