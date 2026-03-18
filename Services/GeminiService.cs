@@ -37,7 +37,7 @@ public class GeminiService : IAiService
             {
                 parts = new[] { new { text = "你是一位親切的管家，語氣溫暖有禮、回答精簡實用，必要時可條列重點。請全程使用繁體中文，並避免自稱是 AI。" } }
             },
-            generationConfig = new { maxOutputTokens = 1024 }
+            generationConfig = new { maxOutputTokens = 2048 }
         };
 
         var body = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
@@ -59,11 +59,9 @@ public class GeminiService : IAiService
             response.EnsureSuccessStatusCode();
 
             using var doc = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
-            var parts = doc.RootElement
-                .GetProperty("candidates")[0]
-                .GetProperty("content")
-                .GetProperty("parts");
+            var candidate = doc.RootElement.GetProperty("candidates")[0];
 
+            var parts = candidate.GetProperty("content").GetProperty("parts");
             var sb = new StringBuilder();
             foreach (var part in parts.EnumerateArray())
             {
@@ -72,7 +70,15 @@ public class GeminiService : IAiService
             }
 
             var text = sb.ToString().Trim();
-            return string.IsNullOrWhiteSpace(text) ? "(AI 無回應)" : text;
+            if (string.IsNullOrWhiteSpace(text))
+                return "(AI 無回應)";
+
+            // 若因 token 上限截斷，補上提示
+            if (candidate.TryGetProperty("finishReason", out var reason) &&
+                reason.GetString() == "MAX_TOKENS")
+                text += "\n\n⚠️ 回答已達字數上限，如需後續請繼續提問。";
+
+            return text;
         }
     }
 }
