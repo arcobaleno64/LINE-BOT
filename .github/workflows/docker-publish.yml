@@ -38,4 +38,11 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Trigger Render Deploy
-        run: curl -s -X POST "${{ secrets.RENDER_DEPLOY_HOOK }}"
+        env:
+          DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
+        run: |
+          if [ -n "$DEPLOY_HOOK" ]; then
+            curl -sf -X POST "$DEPLOY_HOOK"
+          else
+            echo "RENDER_DEPLOY_HOOK not set, skipping"
+          fi
