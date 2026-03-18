@@ -19,7 +19,7 @@ public class ConversationHistoryService
     private readonly int _maxRounds;
     private readonly TimeSpan _idleExpiry;
 
-    public ConversationHistoryService(int maxRounds = 5, int idleMinutes = 30)
+    public ConversationHistoryService(int maxRounds = 15, int idleMinutes = 30)
     {
         _maxRounds  = maxRounds;
         _idleExpiry = TimeSpan.FromMinutes(idleMinutes);
