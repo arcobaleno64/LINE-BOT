@@ -43,7 +43,11 @@ builder.Services.AddControllers();
 
 var app = builder.Build();
 
-app.UseHttpsRedirection();
+if (app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();
+}
+
 app.MapControllers();
 app.MapGet("/", () => Results.Ok("LINE Bot Webhook is running"));
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
