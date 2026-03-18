@@ -87,8 +87,13 @@ public class LineWebhookController : ControllerBase
 
         _logger.LogInformation("Processing message from {UserId}: {Text}", evt.Source?.UserId, userText);
 
+        // 組合 user key：群組/聊天室 + 使用者 ID
+        var sourceId = evt.Source?.GroupId ?? evt.Source?.RoomId ?? evt.Source?.UserId ?? "unknown";
+        var userId   = evt.Source?.UserId ?? "unknown";
+        var userKey  = $"{sourceId}:{userId}";
+
         // 呼叫 AI 取得回覆
-        var aiReply = await _ai.GetReplyAsync(userText, ct);
+        var aiReply = await _ai.GetReplyAsync(userText, userKey, ct);
 
         // 透過 LINE Reply API 回覆
         await _reply.ReplyTextAsync(evt.ReplyToken, aiReply, ct);

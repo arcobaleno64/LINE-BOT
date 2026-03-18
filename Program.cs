@@ -5,6 +5,9 @@ var builder = WebApplication.CreateBuilder(args);
 // ---------- DI: HttpClient ----------
 builder.Services.AddHttpClient();
 
+// ---------- DI: Conversation History ----------
+builder.Services.AddSingleton<ConversationHistoryService>();
+
 // ---------- DI: AI Service (依設定切換 Provider) ----------
 var provider = builder.Configuration["Ai:Provider"] ?? "OpenAI";
 switch (provider)
@@ -13,14 +16,16 @@ switch (provider)
         builder.Services.AddSingleton<IAiService>(sp =>
             new GeminiService(
                 sp.GetRequiredService<IHttpClientFactory>().CreateClient(),
-                sp.GetRequiredService<IConfiguration>()));
+                sp.GetRequiredService<IConfiguration>(),
+                sp.GetRequiredService<ConversationHistoryService>()));
         break;
 
     case "Claude":
         builder.Services.AddSingleton<IAiService>(sp =>
             new ClaudeService(
                 sp.GetRequiredService<IHttpClientFactory>().CreateClient(),
-                sp.GetRequiredService<IConfiguration>()));
+                sp.GetRequiredService<IConfiguration>(),
+                sp.GetRequiredService<ConversationHistoryService>()));
         break;
 
     case "OpenAI":
@@ -28,7 +33,8 @@ switch (provider)
         builder.Services.AddSingleton<IAiService>(sp =>
             new OpenAiService(
                 sp.GetRequiredService<IHttpClientFactory>().CreateClient(),
-                sp.GetRequiredService<IConfiguration>()));
+                sp.GetRequiredService<IConfiguration>(),
+                sp.GetRequiredService<ConversationHistoryService>()));
         break;
 }
 

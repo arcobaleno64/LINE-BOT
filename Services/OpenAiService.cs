@@ -10,27 +10,28 @@ public class OpenAiService : IAiService
     private readonly string _apiKey;
     private readonly string _model;
     private readonly string _endpoint;
+    private readonly ConversationHistoryService _history;
 
-    public OpenAiService(HttpClient http, IConfiguration config)
+    public OpenAiService(HttpClient http, IConfiguration config, ConversationHistoryService history)
     {
         _http     = http;
         _apiKey   = config["Ai:OpenAI:ApiKey"] ?? throw new InvalidOperationException("Missing Ai:OpenAI:ApiKey");
         _model    = config["Ai:OpenAI:Model"] ?? "gpt-4o";
         _endpoint = config["Ai:OpenAI:Endpoint"] ?? "https://api.openai.com/v1/chat/completions";
+        _history  = history;
     }
 
-    public async Task<string> GetReplyAsync(string userMessage, CancellationToken ct = default)
+    public async Task<string> GetReplyAsync(string userMessage, string userKey, CancellationToken ct = default)
     {
-        var payload = new
-        {
-            model    = _model,
-            messages = new[]
-            {
-                new { role = "system", content = "你是一個樂於助人的 LINE 聊天機器人助手。請用繁體中文回答。" },
-                new { role = "user",   content = userMessage }
-            },
-            max_tokens = 1024
-        };
+        var systemMsg = new { role = "system", content = "你是一位親切的管家，語氣溫暖有禮、回答精簡實用，必要時可條列重點。請全程使用繁體中文，並避免自稱是 AI。" };
+        var historyMsgs = _history.GetHistory(userKey)
+            .Select(m => new { role = m.Role, content = m.Content });
+        var messages = new[] { systemMsg }
+            .Concat(historyMsgs)
+            .Append(new { role = "user", content = userMessage })
+            .ToArray();
+
+        var payload = new { model = _model, messages, max_tokens = 2048 };
 
         var request = new HttpRequestMessage(HttpMethod.Post, _endpoint)
         {
@@ -46,8 +47,9 @@ public class OpenAiService : IAiService
             .GetProperty("choices")[0]
             .GetProperty("message")
             .GetProperty("content")
-            .GetString();
+            .GetString() ?? "(AI 無回應)";
 
-        return content ?? "(AI 無回應)";
+        _history.Append(userKey, userMessage, content);
+        return content;
     }
 }

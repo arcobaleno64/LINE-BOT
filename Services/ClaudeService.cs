@@ -9,26 +9,30 @@ public class ClaudeService : IAiService
     private readonly string _apiKey;
     private readonly string _model;
     private readonly string _endpoint;
+    private readonly ConversationHistoryService _history;
 
-    public ClaudeService(HttpClient http, IConfiguration config)
+    public ClaudeService(HttpClient http, IConfiguration config, ConversationHistoryService history)
     {
         _http     = http;
         _apiKey   = config["Ai:Claude:ApiKey"] ?? throw new InvalidOperationException("Missing Ai:Claude:ApiKey");
         _model    = config["Ai:Claude:Model"] ?? "claude-sonnet-4-20250514";
         _endpoint = config["Ai:Claude:Endpoint"] ?? "https://api.anthropic.com/v1/messages";
+        _history  = history;
     }
 
-    public async Task<string> GetReplyAsync(string userMessage, CancellationToken ct = default)
+    public async Task<string> GetReplyAsync(string userMessage, string userKey, CancellationToken ct = default)
     {
+        var historyMsgs = _history.GetHistory(userKey)
+            .Select(m => new { role = m.Role, content = m.Content })
+            .Append(new { role = "user", content = userMessage })
+            .ToArray();
+
         var payload = new
         {
             model      = _model,
-            max_tokens = 1024,
-            system     = "你是一個樂於助人的 LINE 聊天機器人助手。請用繁體中文回答。",
-            messages   = new[]
-            {
-                new { role = "user", content = userMessage }
-            }
+            max_tokens = 2048,
+            system     = "你是一位親切的管家，語氣溫暖有禮、回答精簡實用，必要時可條列重點。請全程使用繁體中文，並避免自稱是 AI。",
+            messages   = historyMsgs
         };
 
         var request = new HttpRequestMessage(HttpMethod.Post, _endpoint)
@@ -45,8 +49,9 @@ public class ClaudeService : IAiService
         var text = doc.RootElement
             .GetProperty("content")[0]
             .GetProperty("text")
-            .GetString();
+            .GetString() ?? "(AI 無回應)";
 
-        return text ?? "(AI 無回應)";
+        _history.Append(userKey, userMessage, text);
+        return text;
     }
 }

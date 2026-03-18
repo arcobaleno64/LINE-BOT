@@ -10,29 +10,33 @@ public class GeminiService : IAiService
     private readonly string _apiKey;
     private readonly string _model;
     private readonly string _endpoint;
+    private readonly ConversationHistoryService _history;
 
-    public GeminiService(HttpClient http, IConfiguration config)
+    public GeminiService(HttpClient http, IConfiguration config, ConversationHistoryService history)
     {
         _http     = http;
         _apiKey   = config["Ai:Gemini:ApiKey"] ?? throw new InvalidOperationException("Missing Ai:Gemini:ApiKey");
         _model    = config["Ai:Gemini:Model"] ?? "gemini-2.5-flash";
         _endpoint = config["Ai:Gemini:Endpoint"] ?? "https://generativelanguage.googleapis.com/v1beta/models";
+        _history  = history;
     }
 
-    public async Task<string> GetReplyAsync(string userMessage, CancellationToken ct = default)
+    public async Task<string> GetReplyAsync(string userMessage, string userKey, CancellationToken ct = default)
     {
         var url = $"{_endpoint.TrimEnd('/')}/{_model}:generateContent?key={_apiKey}";
 
+        // 組合歷史對話 + 本次訊息
+        var history = _history.GetHistory(userKey);
+        var contents = history
+            .Select(m => new { role = m.Role == "assistant" ? "model" : "user",
+                               parts = new[] { new { text = m.Content } } })
+            .Append(new { role = "user",
+                          parts = new[] { new { text = userMessage } } })
+            .ToArray();
+
         var payload = new
         {
-            contents = new[]
-            {
-                new
-                {
-                    role  = "user",
-                    parts = new[] { new { text = userMessage } }
-                }
-            },
+            contents,
             systemInstruction = new
             {
                 parts = new[] { new { text = "你是一位親切的管家，語氣溫暖有禮、回答精簡實用，必要時可條列重點。請全程使用繁體中文，並避免自稱是 AI。" } }
@@ -78,6 +82,8 @@ public class GeminiService : IAiService
                 reason.GetString() == "MAX_TOKENS")
                 text += "\n\n⚠️ 回答已達字數上限，如需後續請繼續提問。";
 
+            // 成功後寫入歷史
+            _history.Append(userKey, userMessage, text);
             return text;
         }
     }
