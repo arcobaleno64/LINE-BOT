@@ -14,10 +14,10 @@ services:
       - key: Line__ChannelAccessToken
         sync: false
       - key: Ai__Provider
-        value: OpenAI
-      - key: Ai__OpenAI__ApiKey
+        value: Gemini
+      - key: Ai__Gemini__ApiKey
         sync: false
-      - key: Ai__OpenAI__Model
-        value: gpt-4o
-      - key: Ai__OpenAI__Endpoint
-        value: https://api.openai.com/v1/chat/completions
+      - key: Ai__Gemini__Model
+        value: gemini-3.1-flash-lite-preview
+      - key: Ai__Gemini__Endpoint
+        value: https://generativelanguage.googleapis.com/v1beta/models
