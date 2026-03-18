@@ -1,10 +1,11 @@
 services:
   - type: web
     name: linebot-webhook
-    runtime: docker
+    runtime: image
+    image:
+      url: ghcr.io/arcobaleno64/line-bot:latest
     plan: free
     region: singapore
-    autoDeploy: true
     healthCheckPath: /health
     envVars:
       - key: ASPNETCORE_ENVIRONMENT
