@@ -1,0 +1,24 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.5.2.0
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LineBotWebhook", "LineBotWebhook.csproj", "{77F2DA55-0576-B837-DBE2-43A7D789A6D0}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{77F2DA55-0576-B837-DBE2-43A7D789A6D0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{77F2DA55-0576-B837-DBE2-43A7D789A6D0}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{77F2DA55-0576-B837-DBE2-43A7D789A6D0}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{77F2DA55-0576-B837-DBE2-43A7D789A6D0}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {4CACD97F-595E-4BC1-BA50-EDD36DB09BA4}
+	EndGlobalSection
+EndGlobal

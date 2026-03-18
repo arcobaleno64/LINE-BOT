@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: linebot-webhook
+    runtime: docker
+    plan: free
+    region: singapore
+    autoDeploy: true
+    healthCheckPath: /health
+    envVars:
+      - key: ASPNETCORE_ENVIRONMENT
+        value: Production
+      - key: Line__ChannelSecret
+        sync: false
+      - key: Line__ChannelAccessToken
+        sync: false
+      - key: Ai__Provider
+        value: OpenAI
+      - key: Ai__OpenAI__ApiKey
+        sync: false
+      - key: Ai__OpenAI__Model
+        value: gpt-4o
+      - key: Ai__OpenAI__Endpoint
+        value: https://api.openai.com/v1/chat/completions

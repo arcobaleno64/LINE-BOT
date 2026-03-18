@@ -1,0 +1,51 @@
+using LineBotWebhook.Services;
+
+var builder = WebApplication.CreateBuilder(args);
+
+// ---------- DI: HttpClient ----------
+builder.Services.AddHttpClient();
+
+// ---------- DI: AI Service (依設定切換 Provider) ----------
+var provider = builder.Configuration["Ai:Provider"] ?? "OpenAI";
+switch (provider)
+{
+    case "Gemini":
+        builder.Services.AddSingleton<IAiService>(sp =>
+            new GeminiService(
+                sp.GetRequiredService<IHttpClientFactory>().CreateClient(),
+                sp.GetRequiredService<IConfiguration>()));
+        break;
+
+    case "Claude":
+        builder.Services.AddSingleton<IAiService>(sp =>
+            new ClaudeService(
+                sp.GetRequiredService<IHttpClientFactory>().CreateClient(),
+                sp.GetRequiredService<IConfiguration>()));
+        break;
+
+    case "OpenAI":
+    default:
+        builder.Services.AddSingleton<IAiService>(sp =>
+            new OpenAiService(
+                sp.GetRequiredService<IHttpClientFactory>().CreateClient(),
+                sp.GetRequiredService<IConfiguration>()));
+        break;
+}
+
+// ---------- DI: LINE Reply Service ----------
+builder.Services.AddSingleton<LineReplyService>(sp =>
+    new LineReplyService(
+        sp.GetRequiredService<IHttpClientFactory>().CreateClient(),
+        sp.GetRequiredService<IConfiguration>()));
+
+// ---------- MVC Controllers ----------
+builder.Services.AddControllers();
+
+var app = builder.Build();
+
+app.UseHttpsRedirection();
+app.MapControllers();
+app.MapGet("/", () => Results.Ok("LINE Bot Webhook is running"));
+app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
+
+app.Run();
