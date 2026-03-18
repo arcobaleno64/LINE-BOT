@@ -59,14 +59,20 @@ public class GeminiService : IAiService
             response.EnsureSuccessStatusCode();
 
             using var doc = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
-            var text = doc.RootElement
+            var parts = doc.RootElement
                 .GetProperty("candidates")[0]
                 .GetProperty("content")
-                .GetProperty("parts")[0]
-                .GetProperty("text")
-                .GetString();
+                .GetProperty("parts");
 
-            return text ?? "(AI 無回應)";
+            var sb = new StringBuilder();
+            foreach (var part in parts.EnumerateArray())
+            {
+                if (part.TryGetProperty("text", out var textPart))
+                    sb.Append(textPart.GetString());
+            }
+
+            var text = sb.ToString().Trim();
+            return string.IsNullOrWhiteSpace(text) ? "(AI 無回應)" : text;
         }
     }
 }
