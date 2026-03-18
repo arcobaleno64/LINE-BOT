@@ -19,10 +19,10 @@ public class ConversationHistoryService
     private readonly int _maxRounds;
     private readonly TimeSpan _idleExpiry;
 
-    public ConversationHistoryService(int maxRounds = 15, int idleMinutes = 30)
+    public ConversationHistoryService(int maxRounds = 15, int idleMinutes = -1)
     {
         _maxRounds  = maxRounds;
-        _idleExpiry = TimeSpan.FromMinutes(idleMinutes);
+        _idleExpiry = idleMinutes < 0 ? TimeSpan.MaxValue : TimeSpan.FromMinutes(idleMinutes);
     }
 
     /// <summary>取得指定使用者的歷史訊息（唯讀快照）</summary>

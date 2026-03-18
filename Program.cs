@@ -6,7 +6,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddHttpClient();
 
 // ---------- DI: Conversation History ----------
-builder.Services.AddSingleton(new ConversationHistoryService(maxRounds: 15, idleMinutes: 30));
+builder.Services.AddSingleton(new ConversationHistoryService(maxRounds: 15, idleMinutes: -1));
 
 // ---------- DI: AI Service (依設定切換 Provider) ----------
 var provider = builder.Configuration["Ai:Provider"] ?? "OpenAI";
