@@ -1,3 +1,4 @@
+using System.Net;
 using System.Text;
 using System.Text.Json;
 
@@ -14,13 +15,12 @@ public class GeminiService : IAiService
     {
         _http     = http;
         _apiKey   = config["Ai:Gemini:ApiKey"] ?? throw new InvalidOperationException("Missing Ai:Gemini:ApiKey");
-        _model    = config["Ai:Gemini:Model"] ?? "gemini-3.1-flash-lite-preview";
+        _model    = config["Ai:Gemini:Model"] ?? "gemini-2.0-flash";
         _endpoint = config["Ai:Gemini:Endpoint"] ?? "https://generativelanguage.googleapis.com/v1beta/models";
     }
 
     public async Task<string> GetReplyAsync(string userMessage, CancellationToken ct = default)
     {
-        // POST {endpoint}/{model}:generateContent?key={apiKey}
         var url = $"{_endpoint.TrimEnd('/')}/{_model}:generateContent?key={_apiKey}";
 
         var payload = new
@@ -40,22 +40,33 @@ public class GeminiService : IAiService
             generationConfig = new { maxOutputTokens = 1024 }
         };
 
-        var request = new HttpRequestMessage(HttpMethod.Post, url)
+        var body = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+
+        // 遇到 429 最多重試 3 次，每次等待間隔加倍
+        int[] retryDelaysMs = [2000, 5000, 10000];
+        for (int attempt = 0; ; attempt++)
         {
-            Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json")
-        };
+            var request = new HttpRequestMessage(HttpMethod.Post, url) { Content = body };
+            var response = await _http.SendAsync(request, ct);
 
-        var response = await _http.SendAsync(request, ct);
-        response.EnsureSuccessStatusCode();
+            if (response.StatusCode == HttpStatusCode.TooManyRequests && attempt < retryDelaysMs.Length)
+            {
+                await Task.Delay(retryDelaysMs[attempt], ct);
+                body = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+                continue;
+            }
 
-        using var doc = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
-        var text = doc.RootElement
-            .GetProperty("candidates")[0]
-            .GetProperty("content")
-            .GetProperty("parts")[0]
-            .GetProperty("text")
-            .GetString();
+            response.EnsureSuccessStatusCode();
 
-        return text ?? "(AI 無回應)";
+            using var doc = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
+            var text = doc.RootElement
+                .GetProperty("candidates")[0]
+                .GetProperty("content")
+                .GetProperty("parts")[0]
+                .GetProperty("text")
+                .GetString();
+
+            return text ?? "(AI 無回應)";
+        }
     }
 }
