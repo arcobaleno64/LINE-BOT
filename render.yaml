@@ -18,6 +18,6 @@ services:
       - key: Ai__Gemini__ApiKey
         sync: false
       - key: Ai__Gemini__Model
-        value: gemini-2.0-flash
+        value: gemini-2.5-flash-lite
       - key: Ai__Gemini__Endpoint
         value: https://generativelanguage.googleapis.com/v1beta/models

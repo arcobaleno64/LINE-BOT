@@ -15,7 +15,7 @@ public class GeminiService : IAiService
     {
         _http     = http;
         _apiKey   = config["Ai:Gemini:ApiKey"] ?? throw new InvalidOperationException("Missing Ai:Gemini:ApiKey");
-        _model    = config["Ai:Gemini:Model"] ?? "gemini-2.0-flash";
+        _model    = config["Ai:Gemini:Model"] ?? "gemini-2.5-flash-lite";
         _endpoint = config["Ai:Gemini:Endpoint"] ?? "https://generativelanguage.googleapis.com/v1beta/models";
     }
 
