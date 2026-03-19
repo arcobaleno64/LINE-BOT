@@ -14,13 +14,16 @@ public class LineWebhookController(
     IAiService ai,
     LineReplyService reply,
     LineContentService content,
+    GeneratedFileService files,
     ILogger<LineWebhookController> logger) : ControllerBase
 {
+    private readonly IConfiguration _config = config;
     private readonly string _channelSecret = config["Line:ChannelSecret"]
             ?? throw new InvalidOperationException("Missing Line:ChannelSecret");
     private readonly IAiService _ai = ai;
     private readonly LineReplyService _reply = reply;
     private readonly LineContentService _content = content;
+    private readonly GeneratedFileService _files = files;
     private readonly ILogger<LineWebhookController> _logger = logger;
 
 
@@ -44,6 +47,8 @@ public class LineWebhookController(
         if (webhook?.Events is null || webhook.Events.Count == 0)
             return Ok();
 
+        var publicBaseUrl = GetPublicBaseUrl();
+
         // 4. 處理每個 event（非同步 fire-and-forget，快速回 200 給 LINE）
         _ = Task.Run(async () =>
         {
@@ -51,7 +56,7 @@ public class LineWebhookController(
             {
                 try
                 {
-                    await HandleEventAsync(evt, ct);
+                    await HandleEventAsync(evt, publicBaseUrl, CancellationToken.None);
                 }
                 catch (Exception ex)
                 {
@@ -63,7 +68,7 @@ public class LineWebhookController(
         return Ok();
     }
 
-    private async Task HandleEventAsync(LineEvent evt, CancellationToken ct)
+    private async Task HandleEventAsync(LineEvent evt, string publicBaseUrl, CancellationToken ct)
     {
         if (evt.Type != "message" || evt.Message is null)
             return;
@@ -120,20 +125,36 @@ public class LineWebhookController(
             {
                 extractedText = _content.ExtractTextFromFile(bytes, fileName, mimeType);
             }
-            catch (NotSupportedException)
+            catch (NotSupportedException ex)
             {
-                await _reply.ReplyTextAsync(evt.ReplyToken, "目前先支援文字型檔案（txt/md/csv/json/xml/log）。你也可以先把內容貼成文字，我可以馬上幫你整理。", ct);
+                await _reply.ReplyTextAsync(evt.ReplyToken, ex.Message, ct);
                 return;
             }
 
             var aiReply = await _ai.GetReplyFromDocumentAsync(fileName, mimeType, extractedText, "請幫我整理重點、關鍵結論與待辦事項。", userKey, ct);
-            await _reply.ReplyTextAsync(evt.ReplyToken, aiReply, ct);
+            var downloadToken = _files.SaveTextFile(
+                Path.GetFileNameWithoutExtension(fileName) + "-整理摘要.md",
+                BuildSummaryFileContent(fileName, mimeType, aiReply));
+            var downloadUrl = $"{publicBaseUrl}/downloads/{downloadToken}";
+
+            var replyText = $"""
+已完成整理：{fileName}
+
+{aiReply}
+
+下載整理檔：
+{downloadUrl}
+
+提醒：下載連結會保留約 24 小時，重新部署後可能失效。
+""";
+
+            await _reply.ReplyTextAsync(evt.ReplyToken, replyText, ct);
             return;
         }
 
         if (evt.Source?.Type == "user")
         {
-            await _reply.ReplyTextAsync(evt.ReplyToken, "目前我支援文字、圖片與文字型檔案（txt/md/csv/json/xml/log）。", ct);
+            await _reply.ReplyTextAsync(evt.ReplyToken, "目前我支援文字、圖片與檔案（txt/md/csv/json/xml/log/pdf）。PDF 目前先支援文字型 PDF。", ct);
         }
     }
 
@@ -153,5 +174,33 @@ public class LineWebhookController(
         return CryptographicOperations.FixedTimeEquals(
             Encoding.UTF8.GetBytes(computed),
             Encoding.UTF8.GetBytes(signature));
+    }
+
+    private string GetPublicBaseUrl()
+    {
+        var configured = _config["App:PublicBaseUrl"];
+        if (!string.IsNullOrWhiteSpace(configured))
+            return configured.TrimEnd('/');
+
+        var proto = Request.Headers["x-forwarded-proto"].ToString();
+        if (string.IsNullOrWhiteSpace(proto))
+            proto = Request.Scheme;
+
+        return $"{proto}://{Request.Host}".TrimEnd('/');
+    }
+
+    private static string BuildSummaryFileContent(string fileName, string mimeType, string summary)
+    {
+        return $"""
+# 檔案整理摘要
+
+- 原始檔名：{fileName}
+- 類型：{mimeType}
+- 產生時間（UTC）：{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss}
+
+## 整理結果
+
+{summary}
+""";
     }
 }

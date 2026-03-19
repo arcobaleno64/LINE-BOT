@@ -1,5 +1,6 @@
 using System.Net.Http.Headers;
 using System.Text;
+using UglyToad.PdfPig;
 
 namespace LineBotWebhook.Services;
 
@@ -33,6 +34,12 @@ public class LineContentService
     public string ExtractTextFromFile(byte[] fileBytes, string fileName, string mimeType)
     {
         var extension = Path.GetExtension(fileName).ToLowerInvariant();
+        var isPdf = mimeType.Equals("application/pdf", StringComparison.OrdinalIgnoreCase)
+            || extension == ".pdf";
+
+        if (isPdf)
+            return ExtractTextFromPdf(fileBytes);
+
         var isLikelyText = mimeType.StartsWith("text/", StringComparison.OrdinalIgnoreCase)
             || extension is ".txt" or ".md" or ".csv" or ".json" or ".xml" or ".log";
 
@@ -42,5 +49,30 @@ public class LineContentService
         }
 
         return Encoding.UTF8.GetString(fileBytes);
+    }
+
+    private static string ExtractTextFromPdf(byte[] fileBytes)
+    {
+        using var stream = new MemoryStream(fileBytes);
+        using var document = PdfDocument.Open(stream);
+
+        var sb = new StringBuilder();
+        foreach (var page in document.GetPages())
+        {
+            var text = page.Text;
+            if (!string.IsNullOrWhiteSpace(text))
+            {
+                if (sb.Length > 0)
+                    sb.AppendLine().AppendLine();
+
+                sb.Append(text.Trim());
+            }
+        }
+
+        var extracted = sb.ToString().Trim();
+        if (string.IsNullOrWhiteSpace(extracted))
+            throw new NotSupportedException("這份 PDF 似乎是掃描型或圖片型 PDF，目前先支援可直接擷取文字的 PDF。");
+
+        return extracted;
     }
 }

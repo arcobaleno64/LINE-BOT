@@ -50,6 +50,8 @@ builder.Services.AddSingleton<LineContentService>(sp =>
         sp.GetRequiredService<IHttpClientFactory>().CreateClient(),
         sp.GetRequiredService<IConfiguration>()));
 
+builder.Services.AddSingleton<GeneratedFileService>();
+
 // ---------- MVC Controllers ----------
 builder.Services.AddControllers();
 
