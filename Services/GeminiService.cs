@@ -169,7 +169,10 @@ MIME：{mimeType}
                 throw lastException;
         }
 
-        throw lastException ?? new InvalidOperationException("Gemini API call failed without a captured exception.");
+        if (lastException is not null)
+            throw lastException;
+
+        throw new InvalidOperationException("Gemini API call failed without a captured exception.");
     }
 
     private async Task<HttpResponseMessage> SendBestEffortGenerateAsync(string apiKey, object payload, CancellationToken ct)
