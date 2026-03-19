@@ -45,44 +45,49 @@ public class ImageMessageHandler : IImageMessageHandler
             return true;
 
         var userKey = BuildUserKey(evt);
+        var logContext = WebhookLogContext.FromEvent(evt, HandlerType, userKey);
         if (!TryThrottle(userKey, evt.Message.Type, out var retryAfter))
         {
             _metrics.RecordThrottleRejected(HandlerType, evt.Message.Type);
             _logger.LogInformation(
-                "Throttle rejected {HandlerType} request for {UserKey}. MessageType={MessageType} RetryAfterSeconds={RetryAfterSeconds}",
-                HandlerType,
-                userKey,
-                evt.Message.Type,
+                "Throttle rejected request. EventId={EventId} HandlerType={HandlerType} SourceType={SourceType} MessageType={MessageType} UserKeyFingerprint={UserKeyFingerprint} RetryAfterSeconds={RetryAfterSeconds}",
+                logContext.EventId,
+                logContext.HandlerType,
+                logContext.SourceType,
+                logContext.MessageType,
+                logContext.UserKeyFingerprint,
                 retryAfter);
-            await _reply.ReplyTextAsync(evt.ReplyToken!, $"訊息有點密集，請在 {retryAfter} 秒後再試。", ct);
+            await _reply.ReplyTextAsync(evt.ReplyToken!, $"訊息有點密集，請在 {retryAfter} 秒後再試。", logContext, ct);
             return true;
         }
 
-        _logger.LogInformation("Processing {HandlerType} message from {UserId}", HandlerType, evt.Source?.UserId ?? "unknown");
         var (bytes, mimeType) = await _content.DownloadMessageContentAsync(evt.Message.Id, ct);
         var aiReply = await TryGetAiReplyAsync(
             () => _ai.GetReplyFromImageAsync(bytes, mimeType, "請幫我分析這張圖片重點。", userKey, ct),
             evt.ReplyToken!,
-            userKey,
+            logContext,
             ct);
         if (aiReply is null)
             return true;
 
-        await _reply.ReplyTextAsync(evt.ReplyToken!, aiReply, ct);
+        await _reply.ReplyTextAsync(evt.ReplyToken!, aiReply, logContext, ct);
         return true;
     }
 
-    private async Task<string?> TryGetAiReplyAsync(Func<Task<string>> aiCall, string replyToken, string userKey, CancellationToken ct)
+    private async Task<string?> TryGetAiReplyAsync(Func<Task<string>> aiCall, string replyToken, WebhookLogContext logContext, CancellationToken ct)
     {
         if (!_aiBackoff.TryPass(out var cooldownRemaining))
         {
             _metrics.RecordAiBackoffRejected(HandlerType);
-            _logger.LogInformation(
-                "AI cooldown active for {HandlerType} request by {UserKey}. RetryAfterSeconds={RetryAfterSeconds}",
-                HandlerType,
-                userKey,
+            _logger.LogDebug(
+                "AI cooldown active. EventId={EventId} HandlerType={HandlerType} SourceType={SourceType} MessageType={MessageType} UserKeyFingerprint={UserKeyFingerprint} RetryAfterSeconds={RetryAfterSeconds}",
+                logContext.EventId,
+                logContext.HandlerType,
+                logContext.SourceType,
+                logContext.MessageType,
+                logContext.UserKeyFingerprint,
                 cooldownRemaining);
-            await _reply.ReplyTextAsync(replyToken, $"目前流量較高，請約 {cooldownRemaining} 秒後再試。", ct);
+            await _reply.ReplyTextAsync(replyToken, $"目前流量較高，請約 {cooldownRemaining} 秒後再試。", logContext, ct);
             return null;
         }
 
@@ -93,20 +98,41 @@ public class ImageMessageHandler : IImageMessageHandler
         catch (Exception ex) when (IsTooManyRequests(ex))
         {
             _metrics.RecordAiTooManyRequests(HandlerType);
+            _logger.LogDebug(
+                ex,
+                "AI rate limit details. EventId={EventId} HandlerType={HandlerType} SourceType={SourceType} MessageType={MessageType}",
+                logContext.EventId,
+                logContext.HandlerType,
+                logContext.SourceType,
+                logContext.MessageType);
             if (IsQuotaExhausted(ex))
             {
                 _metrics.RecordAiQuotaExhausted(HandlerType);
                 var quotaCooldown = GetIntConfig("App:AiQuotaCooldownSeconds", 300);
                 _aiBackoff.Trigger(quotaCooldown);
-                _logger.LogWarning(ex, "AI quota exhausted in {HandlerType} handler for {UserKey}", HandlerType, userKey);
-                await _reply.ReplyTextAsync(replyToken, "今日 AI 配額已達上限，請稍後或明天再試。", ct);
+                _logger.LogWarning(
+                    "AI request hit quota exhaustion. EventId={EventId} HandlerType={HandlerType} SourceType={SourceType} MessageType={MessageType} UserKeyFingerprint={UserKeyFingerprint} IsQuotaExhausted={IsQuotaExhausted}",
+                    logContext.EventId,
+                    logContext.HandlerType,
+                    logContext.SourceType,
+                    logContext.MessageType,
+                    logContext.UserKeyFingerprint,
+                    true);
+                await _reply.ReplyTextAsync(replyToken, "今日 AI 配額已達上限，請稍後或明天再試。", logContext, ct);
                 return null;
             }
 
             var cooldownSeconds = GetIntConfig("App:Ai429CooldownSeconds", 12);
             _aiBackoff.Trigger(cooldownSeconds);
-            _logger.LogWarning(ex, "AI 429 in {HandlerType} handler for {UserKey}", HandlerType, userKey);
-            await _reply.ReplyTextAsync(replyToken, "目前流量較高，稍後再試。", ct);
+            _logger.LogWarning(
+                "AI request hit 429. EventId={EventId} HandlerType={HandlerType} SourceType={SourceType} MessageType={MessageType} UserKeyFingerprint={UserKeyFingerprint} IsQuotaExhausted={IsQuotaExhausted}",
+                logContext.EventId,
+                logContext.HandlerType,
+                logContext.SourceType,
+                logContext.MessageType,
+                logContext.UserKeyFingerprint,
+                false);
+            await _reply.ReplyTextAsync(replyToken, "目前流量較高，稍後再試。", logContext, ct);
             return null;
         }
     }

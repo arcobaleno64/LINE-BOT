@@ -44,7 +44,10 @@ public class LineWebhookController(
         }
 
         _metrics.RecordWebhookEvents(webhook.Events.Count);
-        _logger.LogInformation("Received LINE webhook with {EventCount} events", webhook.Events.Count);
+        _logger.LogInformation(
+            "Received LINE webhook with {EventCount} events. FirstEventId={FirstEventId}",
+            webhook.Events.Count,
+            webhook.Events[0].WebhookEventId);
 
         var publicBaseUrl = _publicBaseUrlResolver.Resolve(Request);
 

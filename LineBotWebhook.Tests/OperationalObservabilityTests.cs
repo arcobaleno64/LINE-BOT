@@ -3,6 +3,7 @@ using LineBotWebhook.Controllers;
 using LineBotWebhook.Models;
 using LineBotWebhook.Services;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace LineBotWebhook.Tests;
@@ -116,6 +117,125 @@ public class OperationalObservabilityTests
 
         Assert.Equal(1, metrics.AiTooManyRequests);
         Assert.Equal(0, metrics.AiQuotaExhausted);
+    }
+
+    [Fact]
+    public async Task ReplySuccess_RecordsMetric_AndStructuredLogContext()
+    {
+        var config = TestFactory.BuildConfig();
+        var metrics = new FakeWebhookMetrics();
+        var logger = new TestLogger<LineReplyService>();
+        var httpHandler = new RecordingHttpMessageHandler((request, ct) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)));
+        var reply = TestFactory.CreateReplyService(config, httpHandler, metrics, logger);
+        var logContext = new WebhookLogContext("evt-123", "text", "text", "user", "FINGERPRINT1");
+
+        await reply.ReplyTextAsync("reply-token", "這是一段回覆", logContext, CancellationToken.None);
+
+        Assert.Equal(1, metrics.RepliesSent);
+        var successLog = Assert.Single(logger.Entries, x => x.Level == LogLevel.Information && x.Message.Contains("Sent LINE reply", StringComparison.Ordinal));
+        Assert.Equal("evt-123", successLog.Properties["EventId"]);
+        Assert.Equal("text", successLog.Properties["HandlerType"]);
+        Assert.Equal("text", successLog.Properties["MessageType"]);
+        Assert.Equal("user", successLog.Properties["SourceType"]);
+        Assert.Equal(1, successLog.Properties["MessageCount"]);
+    }
+
+    [Fact]
+    public async Task TextHandler_ReplyLog_IncludesEventCorrelationKey()
+    {
+        var config = TestFactory.BuildConfig();
+        var metrics = new FakeWebhookMetrics();
+        var replyLogger = new TestLogger<LineReplyService>();
+        var ai = new FakeAiService
+        {
+            OnTextAsync = (msg, key, ct) => Task.FromResult("AI 回覆")
+        };
+        var handler = new RecordingHttpMessageHandler((request, ct) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)));
+        var textHandler = TestFactory.CreateTextHandler(config, ai, handler, metrics: metrics, replyLogger: replyLogger);
+        var evt = BuildTextEvent("user", "請幫我整理");
+        evt.WebhookEventId = "evt-correlation";
+
+        await textHandler.HandleAsync(evt, "https://unit.test", CancellationToken.None);
+
+        var successLog = Assert.Single(replyLogger.Entries, x => x.Level == LogLevel.Information && x.Message.Contains("Sent LINE reply", StringComparison.Ordinal));
+        Assert.Equal("evt-correlation", successLog.Properties["EventId"]);
+    }
+
+    [Fact]
+    public async Task ThrottleReject_Log_UsesFingerprintInsteadOfRawUserKey()
+    {
+        var config = TestFactory.BuildConfig(new Dictionary<string, string?> { ["App:UserThrottleSecondsText"] = "60" });
+        var metrics = new FakeWebhookMetrics();
+        var logger = new TestLogger<TextMessageHandler>();
+        var ai = new FakeAiService();
+        var handler = new RecordingHttpMessageHandler((request, ct) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)));
+        var throttle = new UserRequestThrottleService();
+        var textHandler = TestFactory.CreateTextHandler(config, ai, handler, metrics: metrics, throttle: throttle, logger: logger);
+        var evt = BuildTextEvent("user", "你好");
+        evt.WebhookEventId = "evt-throttle";
+
+        await textHandler.HandleAsync(evt, "https://unit.test", CancellationToken.None);
+        await textHandler.HandleAsync(evt, "https://unit.test", CancellationToken.None);
+
+        var log = Assert.Single(logger.Entries, x => x.Level == LogLevel.Information && x.Message.Contains("Throttle rejected request", StringComparison.Ordinal));
+        Assert.Equal("evt-throttle", log.Properties["EventId"]);
+        Assert.Equal("text", log.Properties["HandlerType"]);
+        Assert.Equal("user", log.Properties["SourceType"]);
+        Assert.Equal("text", log.Properties["MessageType"]);
+        Assert.DoesNotContain("u1:u1", log.Message, StringComparison.Ordinal);
+        Assert.Equal(ObservabilityKeyFingerprint.From("u1:u1"), log.Properties["UserKeyFingerprint"]);
+    }
+
+    [Fact]
+    public async Task Ai429Warning_Log_UsesStandardizedFields_WithoutExceptionBody()
+    {
+        var config = TestFactory.BuildConfig();
+        var metrics = new FakeWebhookMetrics();
+        var logger = new TestLogger<TextMessageHandler>();
+        var ai = new FakeAiService
+        {
+            OnTextAsync = (msg, key, ct) => throw new HttpRequestException("rate limit temporary", null, HttpStatusCode.TooManyRequests)
+        };
+        var handler = new RecordingHttpMessageHandler((request, ct) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)));
+        var textHandler = TestFactory.CreateTextHandler(config, ai, handler, metrics: metrics, backoff: new Ai429BackoffService(), logger: logger);
+        var evt = BuildTextEvent("user", "請幫我整理");
+        evt.WebhookEventId = "evt-429";
+
+        await textHandler.HandleAsync(evt, "https://unit.test", CancellationToken.None);
+
+        var warning = Assert.Single(logger.Entries, x => x.Level == LogLevel.Warning && x.Message.Contains("AI request hit 429", StringComparison.Ordinal));
+        Assert.Null(warning.Exception);
+        Assert.Equal("evt-429", warning.Properties["EventId"]);
+        Assert.Equal("text", warning.Properties["HandlerType"]);
+        Assert.Equal("user", warning.Properties["SourceType"]);
+        Assert.Equal("text", warning.Properties["MessageType"]);
+        Assert.Equal(false, warning.Properties["IsQuotaExhausted"]);
+        Assert.Equal(ObservabilityKeyFingerprint.From("u1:u1"), warning.Properties["UserKeyFingerprint"]);
+        Assert.DoesNotContain("rate limit temporary", warning.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task AiQuotaWarning_Log_UsesStandardizedFields_WithoutExceptionBody()
+    {
+        var config = TestFactory.BuildConfig();
+        var metrics = new FakeWebhookMetrics();
+        var logger = new TestLogger<TextMessageHandler>();
+        var ai = new FakeAiService
+        {
+            OnTextAsync = (msg, key, ct) => throw new HttpRequestException("quota exceeded rpd daily", null, HttpStatusCode.TooManyRequests)
+        };
+        var handler = new RecordingHttpMessageHandler((request, ct) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)));
+        var textHandler = TestFactory.CreateTextHandler(config, ai, handler, metrics: metrics, logger: logger);
+        var evt = BuildTextEvent("user", "你好");
+        evt.WebhookEventId = "evt-quota";
+
+        await textHandler.HandleAsync(evt, "https://unit.test", CancellationToken.None);
+
+        var warning = Assert.Single(logger.Entries, x => x.Level == LogLevel.Warning && x.Message.Contains("AI request hit quota exhaustion", StringComparison.Ordinal));
+        Assert.Null(warning.Exception);
+        Assert.Equal("evt-quota", warning.Properties["EventId"]);
+        Assert.Equal(true, warning.Properties["IsQuotaExhausted"]);
+        Assert.DoesNotContain("quota exceeded rpd daily", warning.Message, StringComparison.Ordinal);
     }
 
     [Fact]

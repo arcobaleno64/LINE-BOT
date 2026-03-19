@@ -53,36 +53,33 @@ public class TextMessageHandler : ITextMessageHandler
         if (!MentionGateService.ShouldHandle(evt))
             return true;
 
+        var userKey = BuildUserKey(evt);
+        var logContext = WebhookLogContext.FromEvent(evt, HandlerType, userKey);
         var userText = MentionGateService.StripMention(evt.Message);
         if (string.IsNullOrWhiteSpace(userText))
         {
-            await _reply.ReplyTextAsync(evt.ReplyToken!, "請問有什麼我能幫忙的嗎？", ct);
+            await _reply.ReplyTextAsync(evt.ReplyToken!, "請問有什麼我能幫忙的嗎？", logContext, ct);
             return true;
         }
-
-        _logger.LogInformation(
-            "Processing {HandlerType} message from {UserId} with length {TextLength}",
-            HandlerType,
-            evt.Source?.UserId ?? "unknown",
-            userText.Length);
 
         if (_dateTimeIntentResponder.TryBuildReply(userText, out var dateTimeReply))
         {
-            await _reply.ReplyTextAsync(evt.ReplyToken!, dateTimeReply, ct);
+            await _reply.ReplyTextAsync(evt.ReplyToken!, dateTimeReply, logContext, ct);
             return true;
         }
 
-        var userKey = BuildUserKey(evt);
         if (!TryThrottle(userKey, evt.Message.Type, out var retryAfter))
         {
             _metrics.RecordThrottleRejected(HandlerType, evt.Message.Type);
             _logger.LogInformation(
-                "Throttle rejected {HandlerType} request for {UserKey}. MessageType={MessageType} RetryAfterSeconds={RetryAfterSeconds}",
-                HandlerType,
-                userKey,
-                evt.Message.Type,
+                "Throttle rejected request. EventId={EventId} HandlerType={HandlerType} SourceType={SourceType} MessageType={MessageType} UserKeyFingerprint={UserKeyFingerprint} RetryAfterSeconds={RetryAfterSeconds}",
+                logContext.EventId,
+                logContext.HandlerType,
+                logContext.SourceType,
+                logContext.MessageType,
+                logContext.UserKeyFingerprint,
                 retryAfter);
-            await _reply.ReplyTextAsync(evt.ReplyToken!, $"訊息有點密集，請在 {retryAfter} 秒後再試。", ct);
+            await _reply.ReplyTextAsync(evt.ReplyToken!, $"訊息有點密集，請在 {retryAfter} 秒後再試。", logContext, ct);
             return true;
         }
 
@@ -91,7 +88,7 @@ public class TextMessageHandler : ITextMessageHandler
         {
             if (!searchOutcome.Succeeded)
             {
-                await _reply.ReplyTextAsync(evt.ReplyToken!, searchOutcome.Message, ct);
+                await _reply.ReplyTextAsync(evt.ReplyToken!, searchOutcome.Message, logContext, ct);
                 return true;
             }
 
@@ -105,7 +102,7 @@ public class TextMessageHandler : ITextMessageHandler
 {searchOutcome.ContextForAi}
 """;
 
-            var webAiReply = await TryGetAiReplyAsync(() => _ai.GetReplyAsync(prompt, userKey, ct), evt.ReplyToken!, userKey, ct);
+            var webAiReply = await TryGetAiReplyAsync(() => _ai.GetReplyAsync(prompt, userKey, ct), evt.ReplyToken!, logContext, ct);
             if (webAiReply is null)
                 return true;
 
@@ -117,26 +114,29 @@ public class TextMessageHandler : ITextMessageHandler
 {sourceList}
 """;
 
-            await _reply.ReplyTextAsync(evt.ReplyToken!, finalReply, ct);
+            await _reply.ReplyTextAsync(evt.ReplyToken!, finalReply, logContext, ct);
             return true;
         }
 
-        var textReply = await GetMergedTextReplyAsync(userKey, userText, ct);
-        await _reply.ReplyTextAsync(evt.ReplyToken!, textReply, ct);
+        var textReply = await GetMergedTextReplyAsync(userKey, userText, ct, logContext);
+        await _reply.ReplyTextAsync(evt.ReplyToken!, textReply, logContext, ct);
         return true;
     }
 
-    private async Task<string?> TryGetAiReplyAsync(Func<Task<string>> aiCall, string replyToken, string userKey, CancellationToken ct)
+    private async Task<string?> TryGetAiReplyAsync(Func<Task<string>> aiCall, string replyToken, WebhookLogContext logContext, CancellationToken ct)
     {
         if (!_aiBackoff.TryPass(out var cooldownRemaining))
         {
             _metrics.RecordAiBackoffRejected(HandlerType);
-            _logger.LogInformation(
-                "AI cooldown active for {HandlerType} request by {UserKey}. RetryAfterSeconds={RetryAfterSeconds}",
-                HandlerType,
-                userKey,
+            _logger.LogDebug(
+                "AI cooldown active. EventId={EventId} HandlerType={HandlerType} SourceType={SourceType} MessageType={MessageType} UserKeyFingerprint={UserKeyFingerprint} RetryAfterSeconds={RetryAfterSeconds}",
+                logContext.EventId,
+                logContext.HandlerType,
+                logContext.SourceType,
+                logContext.MessageType,
+                logContext.UserKeyFingerprint,
                 cooldownRemaining);
-            await _reply.ReplyTextAsync(replyToken, $"目前流量較高，請約 {cooldownRemaining} 秒後再試。", ct);
+            await _reply.ReplyTextAsync(replyToken, $"目前流量較高，請約 {cooldownRemaining} 秒後再試。", logContext, ct);
             return null;
         }
 
@@ -147,33 +147,57 @@ public class TextMessageHandler : ITextMessageHandler
         catch (Exception ex) when (IsTooManyRequests(ex))
         {
             _metrics.RecordAiTooManyRequests(HandlerType);
+            _logger.LogDebug(
+                ex,
+                "AI rate limit details. EventId={EventId} HandlerType={HandlerType} SourceType={SourceType} MessageType={MessageType}",
+                logContext.EventId,
+                logContext.HandlerType,
+                logContext.SourceType,
+                logContext.MessageType);
             if (IsQuotaExhausted(ex))
             {
                 _metrics.RecordAiQuotaExhausted(HandlerType);
                 var quotaCooldown = GetIntConfig("App:AiQuotaCooldownSeconds", 300);
                 _aiBackoff.Trigger(quotaCooldown);
-                _logger.LogWarning(ex, "AI quota exhausted in {HandlerType} handler for {UserKey}", HandlerType, userKey);
-                await _reply.ReplyTextAsync(replyToken, "今日 AI 配額已達上限，請稍後或明天再試。", ct);
+                _logger.LogWarning(
+                    "AI request hit quota exhaustion. EventId={EventId} HandlerType={HandlerType} SourceType={SourceType} MessageType={MessageType} UserKeyFingerprint={UserKeyFingerprint} IsQuotaExhausted={IsQuotaExhausted}",
+                    logContext.EventId,
+                    logContext.HandlerType,
+                    logContext.SourceType,
+                    logContext.MessageType,
+                    logContext.UserKeyFingerprint,
+                    true);
+                await _reply.ReplyTextAsync(replyToken, "今日 AI 配額已達上限，請稍後或明天再試。", logContext, ct);
                 return null;
             }
 
             var cooldownSeconds = GetIntConfig("App:Ai429CooldownSeconds", 12);
             _aiBackoff.Trigger(cooldownSeconds);
-            _logger.LogWarning(ex, "AI 429 in {HandlerType} handler for {UserKey}", HandlerType, userKey);
-            await _reply.ReplyTextAsync(replyToken, "目前流量較高，稍後再試。", ct);
+            _logger.LogWarning(
+                "AI request hit 429. EventId={EventId} HandlerType={HandlerType} SourceType={SourceType} MessageType={MessageType} UserKeyFingerprint={UserKeyFingerprint} IsQuotaExhausted={IsQuotaExhausted}",
+                logContext.EventId,
+                logContext.HandlerType,
+                logContext.SourceType,
+                logContext.MessageType,
+                logContext.UserKeyFingerprint,
+                false);
+            await _reply.ReplyTextAsync(replyToken, "目前流量較高，稍後再試。", logContext, ct);
             return null;
         }
     }
 
-    internal async Task<string> GetMergedTextReplyAsync(string userKey, string userText, CancellationToken ct)
+    internal async Task<string> GetMergedTextReplyAsync(string userKey, string userText, CancellationToken ct, WebhookLogContext? logContext = null)
     {
         var cacheKey = BuildTextCacheKey(userKey, userText);
         if (_aiCache.TryGet(cacheKey, out var cachedReply))
         {
             _metrics.RecordCacheHit(HandlerType);
-            _logger.LogInformation(
-                "Cache hit in {HandlerType} handler for key {CacheKeyHash}",
+            _logger.LogDebug(
+                "Cache hit. EventId={EventId} HandlerType={HandlerType} SourceType={SourceType} MessageType={MessageType} CacheKeyFingerprint={CacheKeyFingerprint}",
+                logContext?.EventId,
                 HandlerType,
+                logContext?.SourceType,
+                logContext?.MessageType,
                 ObservabilityKeyFingerprint.From(cacheKey));
             return cachedReply;
         }
@@ -184,9 +208,12 @@ public class TextMessageHandler : ITextMessageHandler
             if (_aiCache.TryGet(cacheKey, out var hotCachedReply))
             {
                 _metrics.RecordCacheHit(HandlerType);
-                _logger.LogInformation(
-                    "Cache hit in {HandlerType} handler for key {CacheKeyHash}",
+                _logger.LogDebug(
+                    "Cache hit. EventId={EventId} HandlerType={HandlerType} SourceType={SourceType} MessageType={MessageType} CacheKeyFingerprint={CacheKeyFingerprint}",
+                    logContext?.EventId,
                     HandlerType,
+                    logContext?.SourceType,
+                    logContext?.MessageType,
                     ObservabilityKeyFingerprint.From(cacheKey));
                 return hotCachedReply;
             }
@@ -194,10 +221,13 @@ public class TextMessageHandler : ITextMessageHandler
             if (!_aiBackoff.TryPass(out var cooldownRemaining))
             {
                 _metrics.RecordAiBackoffRejected(HandlerType);
-                _logger.LogInformation(
-                    "AI cooldown active for {HandlerType} request by {UserKey}. RetryAfterSeconds={RetryAfterSeconds}",
+                _logger.LogDebug(
+                    "AI cooldown active. EventId={EventId} HandlerType={HandlerType} SourceType={SourceType} MessageType={MessageType} UserKeyFingerprint={UserKeyFingerprint} RetryAfterSeconds={RetryAfterSeconds}",
+                    logContext?.EventId,
                     HandlerType,
-                    userKey,
+                    logContext?.SourceType,
+                    logContext?.MessageType,
+                    logContext?.UserKeyFingerprint ?? ObservabilityKeyFingerprint.From(userKey),
                     cooldownRemaining);
                 return $"目前流量較高，請約 {cooldownRemaining} 秒後再試。";
             }
@@ -215,18 +245,39 @@ public class TextMessageHandler : ITextMessageHandler
             catch (Exception ex) when (IsTooManyRequests(ex))
             {
                 _metrics.RecordAiTooManyRequests(HandlerType);
+                _logger.LogDebug(
+                    ex,
+                    "AI rate limit details. EventId={EventId} HandlerType={HandlerType} SourceType={SourceType} MessageType={MessageType}",
+                    logContext?.EventId,
+                    HandlerType,
+                    logContext?.SourceType,
+                    logContext?.MessageType);
                 if (IsQuotaExhausted(ex))
                 {
                     _metrics.RecordAiQuotaExhausted(HandlerType);
                     var quotaCooldown = GetIntConfig("App:AiQuotaCooldownSeconds", 300);
                     _aiBackoff.Trigger(quotaCooldown);
-                    _logger.LogWarning(ex, "AI quota exhausted in {HandlerType} handler for {UserKey}", HandlerType, userKey);
+                    _logger.LogWarning(
+                        "AI request hit quota exhaustion. EventId={EventId} HandlerType={HandlerType} SourceType={SourceType} MessageType={MessageType} UserKeyFingerprint={UserKeyFingerprint} IsQuotaExhausted={IsQuotaExhausted}",
+                        logContext?.EventId,
+                        HandlerType,
+                        logContext?.SourceType,
+                        logContext?.MessageType,
+                        logContext?.UserKeyFingerprint ?? ObservabilityKeyFingerprint.From(userKey),
+                        true);
                     return "今日 AI 配額已達上限，請稍後或明天再試。";
                 }
 
                 var cooldownSeconds = GetIntConfig("App:Ai429CooldownSeconds", 12);
                 _aiBackoff.Trigger(cooldownSeconds);
-                _logger.LogWarning(ex, "AI 429 in {HandlerType} handler for {UserKey}", HandlerType, userKey);
+                _logger.LogWarning(
+                    "AI request hit 429. EventId={EventId} HandlerType={HandlerType} SourceType={SourceType} MessageType={MessageType} UserKeyFingerprint={UserKeyFingerprint} IsQuotaExhausted={IsQuotaExhausted}",
+                    logContext?.EventId,
+                    HandlerType,
+                    logContext?.SourceType,
+                    logContext?.MessageType,
+                    logContext?.UserKeyFingerprint ?? ObservabilityKeyFingerprint.From(userKey),
+                    false);
                 return "目前流量較高，稍後再試。";
             }
         });
@@ -234,9 +285,12 @@ public class TextMessageHandler : ITextMessageHandler
         if (mergeExecution.JoinedExisting)
         {
             _metrics.RecordMergeJoined(HandlerType);
-            _logger.LogInformation(
-                "Merged duplicate request in {HandlerType} handler for key {MergeKeyHash}",
+            _logger.LogDebug(
+                "Merged duplicate request. EventId={EventId} HandlerType={HandlerType} SourceType={SourceType} MessageType={MessageType} MergeKeyFingerprint={MergeKeyFingerprint}",
+                logContext?.EventId,
                 HandlerType,
+                logContext?.SourceType,
+                logContext?.MessageType,
                 ObservabilityKeyFingerprint.From(mergeKey));
         }
 

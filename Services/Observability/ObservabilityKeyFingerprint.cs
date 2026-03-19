@@ -5,7 +5,7 @@ namespace LineBotWebhook.Services;
 
 internal static class ObservabilityKeyFingerprint
 {
-    public static string From(string value)
+    public static string From(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
             return "empty";

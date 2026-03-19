@@ -80,16 +80,21 @@ public class LineWebhookDispatcher : ILineWebhookDispatcher
 
         if (evt.Source?.Type == "user")
         {
-            _logger.LogInformation(
+            var logContext = WebhookLogContext.FromEvent(evt, handlerType: "unsupported");
+            _logger.LogDebug(
                 "Unsupported fallback for event {EventId} with message type {MessageType} from {SourceType}",
-                evt.WebhookEventId,
-                evt.Message.Type,
-                evt.Source?.Type ?? "unknown");
-            await _reply.ReplyTextAsync(evt.ReplyToken, "目前我支援文字、圖片與檔案（txt/md/csv/json/xml/log/pdf）。PDF 目前先支援文字型 PDF。", ct);
+                logContext.EventId,
+                logContext.MessageType,
+                logContext.SourceType);
+            await _reply.ReplyTextAsync(
+                evt.ReplyToken,
+                "目前我支援文字、圖片與檔案（txt/md/csv/json/xml/log/pdf）。PDF 目前先支援文字型 PDF。",
+                logContext,
+                ct);
             return;
         }
 
-        _logger.LogInformation(
+        _logger.LogDebug(
             "Ignored unsupported event {EventId} with message type {MessageType} from {SourceType}",
             evt.WebhookEventId,
             evt.Message.Type,

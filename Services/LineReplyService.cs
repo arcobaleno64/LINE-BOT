@@ -29,6 +29,12 @@ public class LineReplyService
     /// <summary>回覆文字訊息</summary>
     public async Task ReplyTextAsync(string replyToken, string text, CancellationToken ct = default)
     {
+        await ReplyTextAsync(replyToken, text, logContext: null, ct);
+    }
+
+    /// <summary>回覆文字訊息並附帶最小排障關聯欄位</summary>
+    public async Task ReplyTextAsync(string replyToken, string text, WebhookLogContext? logContext, CancellationToken ct = default)
+    {
         var chunks = SplitIntoLineMessages(text);
         var replyFailedRecorded = false;
 
@@ -52,13 +58,24 @@ public class LineReplyService
                 replyFailedRecorded = true;
                 _metrics.RecordReplyFailed((int)response.StatusCode);
                 _logger.LogError(
-                    "Failed to send LINE reply. StatusCode={StatusCode} MessageCount={MessageCount}",
+                    "Failed to send LINE reply. EventId={EventId} HandlerType={HandlerType} MessageType={MessageType} SourceType={SourceType} StatusCode={StatusCode} MessageCount={MessageCount}",
+                    logContext?.EventId,
+                    logContext?.HandlerType,
+                    logContext?.MessageType,
+                    logContext?.SourceType,
                     (int)response.StatusCode,
                     chunks.Count);
                 response.EnsureSuccessStatusCode();
             }
 
             _metrics.RecordReplySent(chunks.Count);
+            _logger.LogInformation(
+                "Sent LINE reply. EventId={EventId} HandlerType={HandlerType} MessageType={MessageType} SourceType={SourceType} MessageCount={MessageCount}",
+                logContext?.EventId,
+                logContext?.HandlerType,
+                logContext?.MessageType,
+                logContext?.SourceType,
+                chunks.Count);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -70,7 +87,11 @@ public class LineReplyService
                 _metrics.RecordReplyFailed(statusCode);
                 _logger.LogError(
                     ex,
-                    "Failed to send LINE reply. StatusCode={StatusCode} MessageCount={MessageCount}",
+                    "Failed to send LINE reply. EventId={EventId} HandlerType={HandlerType} MessageType={MessageType} SourceType={SourceType} StatusCode={StatusCode} MessageCount={MessageCount}",
+                    logContext?.EventId,
+                    logContext?.HandlerType,
+                    logContext?.MessageType,
+                    logContext?.SourceType,
                     statusCode,
                     chunks.Count);
             }
