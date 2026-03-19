@@ -15,5 +15,4 @@
 **/docker-compose*
 **/node_modules
 **/obj
-Dockerfile*
 README.md
