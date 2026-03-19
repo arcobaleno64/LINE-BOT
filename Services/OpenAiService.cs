@@ -10,6 +10,7 @@ public class OpenAiService : IAiService
     private readonly string _apiKey;
     private readonly string _model;
     private readonly string _endpoint;
+    private readonly int _maxOutputTokens;
     private readonly ConversationHistoryService _history;
 
     public OpenAiService(HttpClient http, IConfiguration config, ConversationHistoryService history)
@@ -18,6 +19,7 @@ public class OpenAiService : IAiService
         _apiKey   = config["Ai:OpenAI:ApiKey"] ?? throw new InvalidOperationException("Missing Ai:OpenAI:ApiKey");
         _model    = config["Ai:OpenAI:Model"] ?? "gpt-4o";
         _endpoint = config["Ai:OpenAI:Endpoint"] ?? "https://api.openai.com/v1/chat/completions";
+        _maxOutputTokens = int.TryParse(config["Ai:MaxOutputTokens"], out var parsed) ? parsed : 4096;
         _history  = history;
     }
 
@@ -31,7 +33,7 @@ public class OpenAiService : IAiService
             .Append(new { role = "user", content = userMessage })
             .ToArray();
 
-        var payload = new { model = _model, messages, max_tokens = 2048 };
+        var payload = new { model = _model, messages, max_tokens = _maxOutputTokens };
 
         var request = new HttpRequestMessage(HttpMethod.Post, _endpoint)
         {

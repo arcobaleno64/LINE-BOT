@@ -9,6 +9,7 @@ public class ClaudeService : IAiService
     private readonly string _apiKey;
     private readonly string _model;
     private readonly string _endpoint;
+    private readonly int _maxOutputTokens;
     private readonly ConversationHistoryService _history;
 
     public ClaudeService(HttpClient http, IConfiguration config, ConversationHistoryService history)
@@ -17,6 +18,7 @@ public class ClaudeService : IAiService
         _apiKey   = config["Ai:Claude:ApiKey"] ?? throw new InvalidOperationException("Missing Ai:Claude:ApiKey");
         _model    = config["Ai:Claude:Model"] ?? "claude-sonnet-4-20250514";
         _endpoint = config["Ai:Claude:Endpoint"] ?? "https://api.anthropic.com/v1/messages";
+        _maxOutputTokens = int.TryParse(config["Ai:MaxOutputTokens"], out var parsed) ? parsed : 4096;
         _history  = history;
     }
 
@@ -30,7 +32,7 @@ public class ClaudeService : IAiService
         var payload = new
         {
             model      = _model,
-            max_tokens = 2048,
+            max_tokens = _maxOutputTokens,
             system     = "你是一位親切的管家，語氣溫暖有禮、回答精簡實用，必要時可條列重點。請全程使用繁體中文，並避免自稱是 AI。",
             messages   = historyMsgs
         };

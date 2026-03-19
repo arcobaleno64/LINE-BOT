@@ -12,6 +12,7 @@ public class GeminiService : IAiService
     private readonly string _apiKey;
     private readonly string _model;
     private readonly string _endpoint;
+    private readonly int _maxOutputTokens;
     private readonly ConversationHistoryService _history;
 
     public GeminiService(HttpClient http, IConfiguration config, ConversationHistoryService history)
@@ -20,6 +21,7 @@ public class GeminiService : IAiService
         _apiKey = config["Ai:Gemini:ApiKey"] ?? throw new InvalidOperationException("Missing Ai:Gemini:ApiKey");
         _model = config["Ai:Gemini:Model"] ?? "gemini-2.5-flash";
         _endpoint = config["Ai:Gemini:Endpoint"] ?? "https://generativelanguage.googleapis.com/v1beta/models";
+        _maxOutputTokens = int.TryParse(config["Ai:MaxOutputTokens"], out var parsed) ? parsed : 4096;
         _history = history;
     }
 
@@ -115,7 +117,7 @@ MIME：{mimeType}
         {
             parts = new[] { new { text = ButlerPrompt } }
         },
-        generationConfig = new { maxOutputTokens = 2048 }
+        generationConfig = new { maxOutputTokens = _maxOutputTokens }
     };
 
     private async Task<string> SendWithRetryAsync(object payload, CancellationToken ct)
