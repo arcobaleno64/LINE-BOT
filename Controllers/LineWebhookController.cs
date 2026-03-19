@@ -19,6 +19,7 @@ public class LineWebhookController(
     GeneratedFileService files,
     WebSearchService webSearch,
     UserRequestThrottleService throttle,
+    Ai429BackoffService aiBackoff,
     ILogger<LineWebhookController> logger) : ControllerBase
 {
     private readonly IConfiguration _config = config;
@@ -30,6 +31,7 @@ public class LineWebhookController(
     private readonly GeneratedFileService _files = files;
     private readonly WebSearchService _webSearch = webSearch;
     private readonly UserRequestThrottleService _throttle = throttle;
+    private readonly Ai429BackoffService _aiBackoff = aiBackoff;
     private readonly ILogger<LineWebhookController> _logger = logger;
 
     private static readonly Regex TimeIntentRegex = new(
@@ -99,15 +101,6 @@ public class LineWebhookController(
         var userId = evt.Source?.UserId ?? "unknown";
         var userKey = $"{sourceId}:{userId}";
 
-        if (evt.Message.Type is "text" or "image" or "file")
-        {
-            if (!_throttle.TryAcquire(userKey, out var retryAfter))
-            {
-                await _reply.ReplyTextAsync(evt.ReplyToken, $"訊息有點密集，請在 {retryAfter} 秒後再試。", ct);
-                return;
-            }
-        }
-
         if (evt.Message.Type == "text")
         {
             if (!MentionGateService.ShouldHandle(evt))
@@ -125,6 +118,12 @@ public class LineWebhookController(
             if (TryBuildDateTimeReply(userText, out var dateTimeReply))
             {
                 await _reply.ReplyTextAsync(evt.ReplyToken, dateTimeReply, ct);
+                return;
+            }
+
+            if (!TryThrottle(userKey, evt.Message.Type, out var retryAfter))
+            {
+                await _reply.ReplyTextAsync(evt.ReplyToken, $"訊息有點密集，請在 {retryAfter} 秒後再試。", ct);
                 return;
             }
 
@@ -176,6 +175,12 @@ public class LineWebhookController(
             if (evt.Source?.Type is "group" or "room")
                 return;
 
+            if (!TryThrottle(userKey, evt.Message.Type, out var retryAfter))
+            {
+                await _reply.ReplyTextAsync(evt.ReplyToken, $"訊息有點密集，請在 {retryAfter} 秒後再試。", ct);
+                return;
+            }
+
             _logger.LogInformation("Processing image message from {UserId}", evt.Source?.UserId);
             var (bytes, mimeType) = await _content.DownloadMessageContentAsync(evt.Message.Id, ct);
             var aiReply = await TryGetAiReplyAsync(
@@ -193,6 +198,12 @@ public class LineWebhookController(
         {
             if (evt.Source?.Type is "group" or "room")
                 return;
+
+            if (!TryThrottle(userKey, evt.Message.Type, out var retryAfter))
+            {
+                await _reply.ReplyTextAsync(evt.ReplyToken, $"訊息有點密集，請在 {retryAfter} 秒後再試。", ct);
+                return;
+            }
 
             _logger.LogInformation("Processing file message from {UserId}", evt.Source?.UserId);
             var (bytes, mimeType) = await _content.DownloadMessageContentAsync(evt.Message.Id, ct);
@@ -244,6 +255,12 @@ public class LineWebhookController(
 
     private async Task<string?> TryGetAiReplyAsync(Func<Task<string>> aiCall, string replyToken, CancellationToken ct)
     {
+        if (!_aiBackoff.TryPass(out var cooldownRemaining))
+        {
+            await _reply.ReplyTextAsync(replyToken, $"目前流量較高，請約 {cooldownRemaining} 秒後再試。", ct);
+            return null;
+        }
+
         try
         {
             return await aiCall();
@@ -251,9 +268,33 @@ public class LineWebhookController(
         catch (Exception ex) when (IsTooManyRequests(ex))
         {
             _logger.LogWarning(ex, "AI provider returned 429 Too Many Requests");
+            var cooldownSeconds = int.TryParse(_config["App:Ai429CooldownSeconds"], out var configured)
+                ? Math.Max(1, configured)
+                : 12;
+            _aiBackoff.Trigger(cooldownSeconds);
             await _reply.ReplyTextAsync(replyToken, "目前流量較高，稍後再試。", ct);
             return null;
         }
+    }
+
+    private bool TryThrottle(string userKey, string messageType, out int retryAfter)
+    {
+        var cooldown = messageType switch
+        {
+            "image" => GetIntConfig("App:UserThrottleSecondsImage", 8),
+            "file" => GetIntConfig("App:UserThrottleSecondsFile", 8),
+            _ => GetIntConfig("App:UserThrottleSecondsText", 3)
+        };
+
+        var throttleKey = $"{userKey}:{messageType}";
+        return _throttle.TryAcquire(throttleKey, cooldown, out retryAfter);
+    }
+
+    private int GetIntConfig(string key, int fallback)
+    {
+        return int.TryParse(_config[key], out var value)
+            ? Math.Max(1, value)
+            : fallback;
     }
 
     private static bool IsTooManyRequests(Exception ex)

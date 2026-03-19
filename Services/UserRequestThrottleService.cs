@@ -4,25 +4,20 @@ public class UserRequestThrottleService
 {
     private readonly Dictionary<string, DateTime> _lastRequestUtc = [];
     private readonly object _lock = new();
-    private readonly TimeSpan _cooldown;
 
-    public UserRequestThrottleService(int cooldownSeconds = 5)
-    {
-        _cooldown = TimeSpan.FromSeconds(Math.Max(1, cooldownSeconds));
-    }
-
-    public bool TryAcquire(string userKey, out int retryAfterSeconds)
+    public bool TryAcquire(string userKey, int cooldownSeconds, out int retryAfterSeconds)
     {
         lock (_lock)
         {
+            var cooldown = TimeSpan.FromSeconds(Math.Max(1, cooldownSeconds));
             var now = DateTime.UtcNow;
 
             if (_lastRequestUtc.TryGetValue(userKey, out var last))
             {
                 var elapsed = now - last;
-                if (elapsed < _cooldown)
+                if (elapsed < cooldown)
                 {
-                    retryAfterSeconds = Math.Max(1, (int)Math.Ceiling((_cooldown - elapsed).TotalSeconds));
+                    retryAfterSeconds = Math.Max(1, (int)Math.Ceiling((cooldown - elapsed).TotalSeconds));
                     return false;
                 }
             }

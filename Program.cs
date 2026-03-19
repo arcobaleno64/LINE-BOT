@@ -51,10 +51,8 @@ builder.Services.AddSingleton<LineContentService>(sp =>
         sp.GetRequiredService<IConfiguration>()));
 
 builder.Services.AddSingleton<GeneratedFileService>();
-builder.Services.AddSingleton(new UserRequestThrottleService(
-    cooldownSeconds: int.TryParse(builder.Configuration["App:UserThrottleSeconds"], out var throttleSeconds)
-        ? throttleSeconds
-        : 5));
+builder.Services.AddSingleton<UserRequestThrottleService>();
+builder.Services.AddSingleton<Ai429BackoffService>();
 
 builder.Services.AddSingleton<WebSearchService>(sp =>
     new WebSearchService(
