@@ -33,6 +33,16 @@ builder.Services.AddSingleton<UserRequestThrottleService>();
 builder.Services.AddSingleton<Ai429BackoffService>();
 builder.Services.AddSingleton<AiResponseCacheService>();
 builder.Services.AddSingleton<InFlightRequestMergeService>();
+builder.Services.AddSingleton<IWebhookSignatureVerifier>(sp =>
+    new WebhookSignatureVerifier(
+        sp.GetRequiredService<IConfiguration>()["Line:ChannelSecret"]
+        ?? throw new InvalidOperationException("Missing Line:ChannelSecret")));
+builder.Services.AddSingleton<IPublicBaseUrlResolver, PublicBaseUrlResolver>();
+builder.Services.AddSingleton<IDateTimeIntentResponder, DateTimeIntentResponder>();
+builder.Services.AddSingleton<ITextMessageHandler, TextMessageHandler>();
+builder.Services.AddSingleton<IImageMessageHandler, ImageMessageHandler>();
+builder.Services.AddSingleton<IFileMessageHandler, FileMessageHandler>();
+builder.Services.AddSingleton<ILineWebhookDispatcher, LineWebhookDispatcher>();
 
 builder.Services.AddSingleton<WebSearchService>(sp =>
     new WebSearchService(
