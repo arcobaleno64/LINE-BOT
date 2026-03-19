@@ -10,4 +10,10 @@
     <PackageReference Include="PdfPig" Version="0.1.13" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Remove="LineBotWebhook.Tests\**\*.cs" />
+    <EmbeddedResource Remove="LineBotWebhook.Tests\**\*" />
+    <None Remove="LineBotWebhook.Tests\**\*" />
+  </ItemGroup>
+
 </Project>
