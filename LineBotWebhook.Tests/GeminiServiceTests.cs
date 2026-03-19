@@ -11,7 +11,7 @@ public class GeminiServiceTests
         var attempts = new List<string>();
         var handler = new RecordingHttpMessageHandler(async (request, ct) =>
         {
-            attempts.Add(request.RequestUri!.Query);
+            attempts.Add(request.RequestUri!.ToString());
 
             if (attempts.Count <= 2)
                 return new HttpResponseMessage(HttpStatusCode.TooManyRequests);
@@ -43,7 +43,10 @@ public class GeminiServiceTests
         Assert.Equal("第二把 key 成功", reply);
         Assert.Equal(3, attempts.Count);
         Assert.Contains("key=primary-key", attempts[0], StringComparison.Ordinal);
-        Assert.Contains("key=primary-key", attempts[1], StringComparison.Ordinal);
-        Assert.Contains("key=secondary-key", attempts[2], StringComparison.Ordinal);
+        Assert.Contains("gemini-2.5-flash", attempts[0], StringComparison.Ordinal);
+        Assert.Contains("key=secondary-key", attempts[1], StringComparison.Ordinal);
+        Assert.Contains("gemini-2.5-flash", attempts[1], StringComparison.Ordinal);
+        Assert.Contains("key=primary-key", attempts[2], StringComparison.Ordinal);
+        Assert.Contains("gemini-2.0-flash-lite", attempts[2], StringComparison.Ordinal);
     }
 }

@@ -129,9 +129,9 @@ MIME：{mimeType}
     {
         HttpRequestException? lastException = null;
 
-        foreach (var apiKey in _apiKeys)
+        foreach (var attempt in BuildAttempts())
         {
-            using var response = await SendBestEffortGenerateAsync(apiKey, payload, ct);
+            using var response = await SendGenerateAsync(attempt.Model, attempt.ApiKey, payload, ct);
 
             if (response.IsSuccessStatusCode)
             {
@@ -165,7 +165,7 @@ MIME：{mimeType}
                 null,
                 response.StatusCode);
 
-            if (!ShouldTryNextApiKey(response.StatusCode))
+            if (!ShouldTryNextAttempt(response.StatusCode))
                 throw lastException;
         }
 
@@ -175,21 +175,19 @@ MIME：{mimeType}
         throw new InvalidOperationException("Gemini API call failed without a captured exception.");
     }
 
-    private async Task<HttpResponseMessage> SendBestEffortGenerateAsync(string apiKey, object payload, CancellationToken ct)
+    private IEnumerable<GeminiAttempt> BuildAttempts()
     {
-        var response = await SendGenerateAsync(_model, apiKey, payload, ct);
+        foreach (var apiKey in _apiKeys)
+            yield return new GeminiAttempt(apiKey, _model);
 
-        if (response.StatusCode == HttpStatusCode.TooManyRequests &&
-            !string.Equals(_model, _fallbackModel, StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(_model, _fallbackModel, StringComparison.OrdinalIgnoreCase))
         {
-            response.Dispose();
-            response = await SendGenerateAsync(_fallbackModel, apiKey, payload, ct);
+            foreach (var apiKey in _apiKeys)
+                yield return new GeminiAttempt(apiKey, _fallbackModel);
         }
-
-        return response;
     }
 
-    private static bool ShouldTryNextApiKey(HttpStatusCode statusCode)
+    private static bool ShouldTryNextAttempt(HttpStatusCode statusCode)
         => statusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden or HttpStatusCode.TooManyRequests
             || (int)statusCode is >= 500 and <= 599;
 
@@ -200,5 +198,7 @@ MIME：{mimeType}
         var request = new HttpRequestMessage(HttpMethod.Post, url) { Content = body };
         return _http.SendAsync(request, ct);
     }
+
+    private sealed record GeminiAttempt(string ApiKey, string Model);
 }
 
