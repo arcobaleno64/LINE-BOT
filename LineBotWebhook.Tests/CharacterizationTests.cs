@@ -55,6 +55,52 @@ public class CharacterizationTests
     }
 
     [Fact]
+    public async Task Webhook_ValidBody_Returns200_AndDispatchesEvent()
+    {
+        var dispatcher = new FakeDispatcher();
+        var evt = new LineEvent
+        {
+            Type = "message",
+            ReplyToken = "r1",
+            Source = new LineSource { Type = "user", UserId = "u1" },
+            Message = new LineMessage { Id = "m1", Type = "text", Text = "hello" }
+        };
+
+        var controller = new LineWebhookController(
+            signatureVerifier: new AlwaysTrueSignatureVerifier(),
+            publicBaseUrlResolver: new PublicBaseUrlResolver(TestFactory.BuildConfig()),
+            dispatcher: dispatcher,
+            logger: NullLogger<LineWebhookController>.Instance)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestFactory.CreateHttpContext(TestFactory.BuildWebhookJson(evt))
+            }
+        };
+
+        var result = await controller.Webhook(CancellationToken.None);
+
+        Assert.IsType<OkResult>(result);
+        var dispatched = await dispatcher.WaitForDispatchAsync(TimeSpan.FromSeconds(2));
+        Assert.True(dispatched);
+        Assert.True(dispatcher.DispatchCalls >= 1);
+    }
+
+    [Theory]
+    [InlineData("今天：（幾號）")]
+    [InlineData("現在：幾點")]
+    [InlineData("今天;星期幾")]
+    public void DateTimeIntentResponder_Parity_WithPunctuationInputs(string input)
+    {
+        var responder = new DateTimeIntentResponder(TestFactory.BuildConfig());
+
+        var hit = responder.TryBuildReply(input, out var reply);
+
+        Assert.True(hit);
+        Assert.False(string.IsNullOrWhiteSpace(reply));
+    }
+
+    [Fact]
     public async Task GroupTextWithoutMention_IsIgnored()
     {
         var config = TestFactory.BuildConfig();
@@ -272,6 +318,124 @@ public class CharacterizationTests
         var replyText = TestFactory.GetLastReplyText(handler);
         Assert.NotNull(replyText);
         Assert.Contains("今日 AI 配額已達上限", replyText!);
+    }
+
+    [Fact]
+    public async Task Ai429NonQuota_ReturnsBusyMessage_AndCooldownApplied()
+    {
+        var config = TestFactory.BuildConfig();
+        var ai = new FakeAiService
+        {
+            OnTextAsync = (msg, key, ct) => throw new HttpRequestException("rate limit temporary", null, HttpStatusCode.TooManyRequests)
+        };
+        var handler = new RecordingHttpMessageHandler((request, ct) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)));
+        var backoff = new Ai429BackoffService();
+        var textHandler = TestFactory.CreateTextHandler(config, ai, handler, backoff: backoff);
+
+        var evt = BuildTextEvent("user", "請幫我整理");
+        await textHandler.HandleAsync(evt, "https://unit.test", CancellationToken.None);
+
+        var replyText = TestFactory.GetLastReplyText(handler);
+        Assert.NotNull(replyText);
+        Assert.Contains("目前流量較高，稍後再試。", replyText!);
+
+        var pass = backoff.TryPass(out var retryAfterSeconds);
+        Assert.False(pass);
+        Assert.True(retryAfterSeconds >= 1);
+    }
+
+    [Fact]
+    public async Task TextCacheHit_SecondCall_DoesNotCallAiAgain()
+    {
+        var config = TestFactory.BuildConfig();
+        var ai = new FakeAiService
+        {
+            OnTextAsync = (msg, key, ct) => Task.FromResult("快取測試回覆")
+        };
+        var handler = new RecordingHttpMessageHandler((request, ct) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)));
+        var textHandler = TestFactory.CreateTextHandler(config, ai, handler);
+
+        var first = await TestFactory.InvokeMergedTextReplyAsync(textHandler, "u1:u1", "同一句測試", CancellationToken.None);
+        var second = await TestFactory.InvokeMergedTextReplyAsync(textHandler, "u1:u1", "同一句測試", CancellationToken.None);
+
+        Assert.Equal("快取測試回覆", first);
+        Assert.Equal("快取測試回覆", second);
+        Assert.Equal(1, ai.TextCalls);
+    }
+
+    [Fact]
+    public async Task TextMergeJoined_SameWindow_UsesSingleInFlightAiCall()
+    {
+        var config = TestFactory.BuildConfig();
+        var gate = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var firstCallStarted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var ai = new FakeAiService
+        {
+            OnTextAsync = async (msg, key, ct) =>
+            {
+                firstCallStarted.TrySetResult(true);
+                return await gate.Task;
+            }
+        };
+
+        var handler = new RecordingHttpMessageHandler((request, ct) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)));
+        var textHandler = TestFactory.CreateTextHandler(config, ai, handler);
+
+        var t1 = TestFactory.InvokeMergedTextReplyAsync(textHandler, "u1:u1", "merge test", CancellationToken.None);
+        await firstCallStarted.Task;
+        var t2 = TestFactory.InvokeMergedTextReplyAsync(textHandler, "u1:u1", "merge test", CancellationToken.None);
+
+        Assert.Equal(1, ai.TextCalls);
+
+        gate.SetResult("合併成功");
+        var r1 = await t1;
+        var r2 = await t2;
+
+        Assert.Equal("合併成功", r1);
+        Assert.Equal("合併成功", r2);
+        Assert.Equal(1, ai.TextCalls);
+    }
+
+    [Fact]
+    public async Task Dispatcher_UnsupportedMessage_UserSource_RepliesFallback()
+    {
+        var config = TestFactory.BuildConfig();
+        var handler = new RecordingHttpMessageHandler((request, ct) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)));
+        var dispatcher = TestFactory.CreateDispatcher(config, handler, textHandled: false, imageHandled: false, fileHandled: false);
+
+        var evt = new LineEvent
+        {
+            Type = "message",
+            ReplyToken = "r1",
+            Source = new LineSource { Type = "user", UserId = "u1" },
+            Message = new LineMessage { Id = "m1", Type = "sticker" }
+        };
+
+        await dispatcher.DispatchAsync(evt, "https://unit.test", CancellationToken.None);
+
+        var replyText = TestFactory.GetLastReplyText(handler);
+        Assert.Equal("目前我支援文字、圖片與檔案（txt/md/csv/json/xml/log/pdf）。PDF 目前先支援文字型 PDF。", replyText);
+    }
+
+    [Fact]
+    public async Task Dispatcher_UnsupportedMessage_GroupSource_NoFallbackReply()
+    {
+        var config = TestFactory.BuildConfig();
+        var handler = new RecordingHttpMessageHandler((request, ct) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)));
+        var dispatcher = TestFactory.CreateDispatcher(config, handler, textHandled: false, imageHandled: false, fileHandled: false);
+
+        var evt = new LineEvent
+        {
+            Type = "message",
+            ReplyToken = "r1",
+            Source = new LineSource { Type = "group", GroupId = "g1", UserId = "u1" },
+            Message = new LineMessage { Id = "m1", Type = "sticker" }
+        };
+
+        await dispatcher.DispatchAsync(evt, "https://unit.test", CancellationToken.None);
+
+        Assert.Empty(handler.Requests);
     }
 
     private static LineEvent BuildTextEvent(string sourceType, string text, bool mentioned = false)

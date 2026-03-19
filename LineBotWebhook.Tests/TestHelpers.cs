@@ -1,4 +1,5 @@
 using System.Net;
+using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using LineBotWebhook.Models;
@@ -57,13 +58,40 @@ internal sealed class FakeAiService : IAiService
 
 internal sealed class FakeDispatcher : ILineWebhookDispatcher
 {
+    private readonly TaskCompletionSource<bool> _firstDispatchTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
     public int DispatchCalls { get; private set; }
 
     public Task DispatchAsync(LineEvent evt, string publicBaseUrl, CancellationToken ct)
     {
         DispatchCalls++;
+        _firstDispatchTcs.TrySetResult(true);
         return Task.CompletedTask;
     }
+
+    public async Task<bool> WaitForDispatchAsync(TimeSpan timeout)
+    {
+        var completed = await Task.WhenAny(_firstDispatchTcs.Task, Task.Delay(timeout));
+        return completed == _firstDispatchTcs.Task;
+    }
+}
+
+internal sealed class StaticResultTextHandler(bool handled) : ITextMessageHandler
+{
+    public Task<bool> HandleAsync(LineEvent evt, string publicBaseUrl, CancellationToken ct)
+        => Task.FromResult(handled);
+}
+
+internal sealed class StaticResultImageHandler(bool handled) : IImageMessageHandler
+{
+    public Task<bool> HandleAsync(LineEvent evt, string publicBaseUrl, CancellationToken ct)
+        => Task.FromResult(handled);
+}
+
+internal sealed class StaticResultFileHandler(bool handled) : IFileMessageHandler
+{
+    public Task<bool> HandleAsync(LineEvent evt, string publicBaseUrl, CancellationToken ct)
+        => Task.FromResult(handled);
 }
 
 internal static class TestFactory
@@ -198,5 +226,31 @@ internal static class TestFactory
             throttle ?? new UserRequestThrottleService(),
             backoff ?? new Ai429BackoffService(),
             NullLogger<FileMessageHandler>.Instance);
+    }
+
+    public static LineWebhookDispatcher CreateDispatcher(
+        IConfiguration config,
+        RecordingHttpMessageHandler httpHandler,
+        bool textHandled,
+        bool imageHandled,
+        bool fileHandled)
+    {
+        var httpClient = new HttpClient(httpHandler);
+        var reply = new LineReplyService(httpClient, config);
+
+        return new LineWebhookDispatcher(
+            new StaticResultTextHandler(textHandled),
+            new StaticResultImageHandler(imageHandled),
+            new StaticResultFileHandler(fileHandled),
+            reply);
+    }
+
+    public static Task<string> InvokeMergedTextReplyAsync(TextMessageHandler handler, string userKey, string userText, CancellationToken ct = default)
+    {
+        var method = typeof(TextMessageHandler).GetMethod("GetMergedTextReplyAsync", BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("GetMergedTextReplyAsync not found.");
+
+        var task = method.Invoke(handler, [userKey, userText, ct]) as Task<string>;
+        return task ?? throw new InvalidOperationException("GetMergedTextReplyAsync returned null.");
     }
 }
