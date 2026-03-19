@@ -137,7 +137,14 @@ MIME：{mimeType}
         // 不在此層重試，避免多 webhook 同時 retry 放大 429 風暴
         using (response)
         {
-            response.EnsureSuccessStatusCode();
+            if (!response.IsSuccessStatusCode)
+            {
+                var errorBody = await response.Content.ReadAsStringAsync(ct);
+                throw new HttpRequestException(
+                    $"Gemini API error {(int)response.StatusCode}: {errorBody}",
+                    null,
+                    response.StatusCode);
+            }
 
             using var doc = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
             var candidate = doc.RootElement.GetProperty("candidates")[0];

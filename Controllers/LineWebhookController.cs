@@ -14,6 +14,7 @@ namespace LineBotWebhook.Controllers;
 public class LineWebhookController(
     IConfiguration config,
     IAiService ai,
+    AiResponseCacheService aiCache,
     LineReplyService reply,
     LineContentService content,
     GeneratedFileService files,
@@ -26,6 +27,7 @@ public class LineWebhookController(
     private readonly string _channelSecret = config["Line:ChannelSecret"]
             ?? throw new InvalidOperationException("Missing Line:ChannelSecret");
     private readonly IAiService _ai = ai;
+    private readonly AiResponseCacheService _aiCache = aiCache;
     private readonly LineReplyService _reply = reply;
     private readonly LineContentService _content = content;
     private readonly GeneratedFileService _files = files;
@@ -162,7 +164,12 @@ public class LineWebhookController(
                 return;
             }
 
-            var aiReply = await TryGetAiReplyAsync(() => _ai.GetReplyAsync(userText, userKey, ct), evt.ReplyToken, ct);
+            var aiReply = await TryGetAiReplyAsync(
+                () => _ai.GetReplyAsync(userText, userKey, ct),
+                evt.ReplyToken,
+                userKey,
+                userText,
+                ct);
             if (aiReply is null)
                 return;
 
@@ -268,13 +275,37 @@ public class LineWebhookController(
         catch (Exception ex) when (IsTooManyRequests(ex))
         {
             _logger.LogWarning(ex, "AI provider returned 429 Too Many Requests");
-            var cooldownSeconds = int.TryParse(_config["App:Ai429CooldownSeconds"], out var configured)
-                ? Math.Max(1, configured)
-                : 12;
+            if (IsQuotaExhausted(ex))
+            {
+                var quotaCooldown = GetIntConfig("App:AiQuotaCooldownSeconds", 300);
+                _aiBackoff.Trigger(quotaCooldown);
+                await _reply.ReplyTextAsync(replyToken, "今日 AI 配額已達上限，請稍後或明天再試。", ct);
+                return null;
+            }
+
+            var cooldownSeconds = GetIntConfig("App:Ai429CooldownSeconds", 12);
             _aiBackoff.Trigger(cooldownSeconds);
             await _reply.ReplyTextAsync(replyToken, "目前流量較高，稍後再試。", ct);
             return null;
         }
+    }
+
+    private async Task<string?> TryGetAiReplyAsync(Func<Task<string>> aiCall, string replyToken, string userKey, string userText, CancellationToken ct)
+    {
+        var cacheKey = BuildTextCacheKey(userKey, userText);
+        if (_aiCache.TryGet(cacheKey, out var cachedReply))
+        {
+            _logger.LogInformation("Returning cached AI reply for key {CacheKey}", cacheKey);
+            return cachedReply;
+        }
+
+        var aiReply = await TryGetAiReplyAsync(aiCall, replyToken, ct);
+        if (string.IsNullOrWhiteSpace(aiReply))
+            return aiReply;
+
+        var cacheTtlSeconds = GetIntConfig("App:AiResponseCacheSeconds", 180);
+        _aiCache.Set(cacheKey, aiReply, cacheTtlSeconds);
+        return aiReply;
     }
 
     private bool TryThrottle(string userKey, string messageType, out int retryAfter)
@@ -304,6 +335,38 @@ public class LineWebhookController(
 
         return ex.InnerException is not null && IsTooManyRequests(ex.InnerException);
     }
+
+    private static bool IsQuotaExhausted(Exception ex)
+    {
+        var message = CollectExceptionMessage(ex);
+        if (string.IsNullOrWhiteSpace(message))
+            return false;
+
+        var normalized = message.ToLowerInvariant();
+        return normalized.Contains("rpd")
+            || normalized.Contains("daily")
+            || normalized.Contains("quota")
+            || normalized.Contains("resource_exhausted")
+            || normalized.Contains("limit exceeded")
+            || normalized.Contains("exceeded your current quota");
+    }
+
+    private static string CollectExceptionMessage(Exception ex)
+    {
+        var messages = new List<string>();
+        var cursor = ex;
+        while (cursor is not null)
+        {
+            if (!string.IsNullOrWhiteSpace(cursor.Message))
+                messages.Add(cursor.Message);
+            cursor = cursor.InnerException;
+        }
+
+        return string.Join("\n", messages);
+    }
+
+    private static string BuildTextCacheKey(string userKey, string userText)
+        => $"{userKey}:text:{NormalizeForIntent(userText)}";
 
     /// <summary>HMAC-SHA256 簽章驗證</summary>
     private bool VerifySignature(string body, string signature)

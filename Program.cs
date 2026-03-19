@@ -53,6 +53,7 @@ builder.Services.AddSingleton<LineContentService>(sp =>
 builder.Services.AddSingleton<GeneratedFileService>();
 builder.Services.AddSingleton<UserRequestThrottleService>();
 builder.Services.AddSingleton<Ai429BackoffService>();
+builder.Services.AddSingleton<AiResponseCacheService>();
 
 builder.Services.AddSingleton<WebSearchService>(sp =>
     new WebSearchService(
