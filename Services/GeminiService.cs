@@ -15,9 +15,8 @@ public class GeminiService : IAiService
     private readonly string _endpoint;
     private readonly int _maxOutputTokens;
     private readonly ConversationHistoryService _history;
-    private readonly ILogger<GeminiService> _logger;
 
-    public GeminiService(HttpClient http, IConfiguration config, ConversationHistoryService history, ILogger<GeminiService> logger)
+    public GeminiService(HttpClient http, IConfiguration config, ConversationHistoryService history)
     {
         _http = http;
         _apiKey = config["Ai:Gemini:ApiKey"] ?? throw new InvalidOperationException("Missing Ai:Gemini:ApiKey");
@@ -26,7 +25,6 @@ public class GeminiService : IAiService
         _endpoint = config["Ai:Gemini:Endpoint"] ?? "https://generativelanguage.googleapis.com/v1beta/models";
         _maxOutputTokens = int.TryParse(config["Ai:MaxOutputTokens"], out var parsed) ? parsed : 4096;
         _history = history;
-        _logger = logger;
     }
 
     public async Task<string> GetReplyAsync(string userMessage, string userKey, CancellationToken ct = default)
@@ -131,7 +129,6 @@ MIME：{mimeType}
         if (response.StatusCode == HttpStatusCode.TooManyRequests &&
             !string.Equals(_model, _fallbackModel, StringComparison.OrdinalIgnoreCase))
         {
-            _logger.LogWarning("Gemini primary model {PrimaryModel} hit 429, trying fallback model {FallbackModel}", _model, _fallbackModel);
             response.Dispose();
             response = await SendGenerateAsync(_fallbackModel, payload, ct);
         }
