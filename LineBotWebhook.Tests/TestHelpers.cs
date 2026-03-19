@@ -93,6 +93,38 @@ internal sealed class StaticResultFileHandler(bool handled) : IFileMessageHandle
         => Task.FromResult(handled);
 }
 
+internal sealed class FakeWebhookMetrics : IWebhookMetrics
+{
+    public int WebhookRequests { get; private set; }
+    public int InvalidSignatures { get; private set; }
+    public int WebhookEvents { get; private set; }
+    public int ThrottleRejected { get; private set; }
+    public int AiBackoffRejected { get; private set; }
+    public int AiTooManyRequests { get; private set; }
+    public int AiQuotaExhausted { get; private set; }
+    public int CacheHits { get; private set; }
+    public int MergeJoined { get; private set; }
+    public int RepliesSent { get; private set; }
+    public int RepliesFailed { get; private set; }
+    public Dictionary<string, int> MessageHandledByType { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+    public void RecordWebhookRequest() => WebhookRequests++;
+    public void RecordInvalidSignature() => InvalidSignatures++;
+    public void RecordWebhookEvents(int eventCount) => WebhookEvents += eventCount;
+
+    public void RecordMessageHandled(string messageType, string? sourceType = null)
+        => MessageHandledByType[messageType] = MessageHandledByType.GetValueOrDefault(messageType) + 1;
+
+    public void RecordThrottleRejected(string handlerType, string messageType) => ThrottleRejected++;
+    public void RecordAiBackoffRejected(string handlerType) => AiBackoffRejected++;
+    public void RecordAiTooManyRequests(string handlerType) => AiTooManyRequests++;
+    public void RecordAiQuotaExhausted(string handlerType) => AiQuotaExhausted++;
+    public void RecordCacheHit(string handlerType) => CacheHits++;
+    public void RecordMergeJoined(string handlerType) => MergeJoined++;
+    public void RecordReplySent(int messageCount) => RepliesSent++;
+    public void RecordReplyFailed(int? statusCode = null) => RepliesFailed++;
+}
+
 internal static class TestFactory
 {
     public static IConfiguration BuildConfig(Dictionary<string, string?>? overrides = null)
@@ -160,13 +192,15 @@ internal static class TestFactory
         IConfiguration config,
         IAiService ai,
         RecordingHttpMessageHandler httpHandler,
+        IWebhookMetrics? metrics = null,
         UserRequestThrottleService? throttle = null,
         Ai429BackoffService? backoff = null,
         AiResponseCacheService? cache = null,
         InFlightRequestMergeService? merge = null)
     {
+        var actualMetrics = metrics ?? new FakeWebhookMetrics();
         var httpClient = new HttpClient(httpHandler);
-        var reply = new LineReplyService(httpClient, config);
+        var reply = new LineReplyService(httpClient, config, actualMetrics, NullLogger<LineReplyService>.Instance);
         var webSearch = new WebSearchService(httpClient, config);
         var responder = new DateTimeIntentResponder(config);
 
@@ -180,6 +214,7 @@ internal static class TestFactory
             throttle ?? new UserRequestThrottleService(),
             backoff ?? new Ai429BackoffService(),
             responder,
+            actualMetrics,
             NullLogger<TextMessageHandler>.Instance);
     }
 
@@ -187,11 +222,13 @@ internal static class TestFactory
         IConfiguration config,
         IAiService ai,
         RecordingHttpMessageHandler httpHandler,
+        IWebhookMetrics? metrics = null,
         UserRequestThrottleService? throttle = null,
         Ai429BackoffService? backoff = null)
     {
+        var actualMetrics = metrics ?? new FakeWebhookMetrics();
         var httpClient = new HttpClient(httpHandler);
-        var reply = new LineReplyService(httpClient, config);
+        var reply = new LineReplyService(httpClient, config, actualMetrics, NullLogger<LineReplyService>.Instance);
         var content = new LineContentService(httpClient, config);
 
         return new ImageMessageHandler(
@@ -201,6 +238,7 @@ internal static class TestFactory
             content,
             throttle ?? new UserRequestThrottleService(),
             backoff ?? new Ai429BackoffService(),
+            actualMetrics,
             NullLogger<ImageMessageHandler>.Instance);
     }
 
@@ -208,12 +246,14 @@ internal static class TestFactory
         IConfiguration config,
         IAiService ai,
         RecordingHttpMessageHandler httpHandler,
+        IWebhookMetrics? metrics = null,
         GeneratedFileService? files = null,
         UserRequestThrottleService? throttle = null,
         Ai429BackoffService? backoff = null)
     {
+        var actualMetrics = metrics ?? new FakeWebhookMetrics();
         var httpClient = new HttpClient(httpHandler);
-        var reply = new LineReplyService(httpClient, config);
+        var reply = new LineReplyService(httpClient, config, actualMetrics, NullLogger<LineReplyService>.Instance);
         var content = new LineContentService(httpClient, config);
 
         return new FileMessageHandler(
@@ -224,24 +264,29 @@ internal static class TestFactory
             files ?? new GeneratedFileService(),
             throttle ?? new UserRequestThrottleService(),
             backoff ?? new Ai429BackoffService(),
+            actualMetrics,
             NullLogger<FileMessageHandler>.Instance);
     }
 
     public static LineWebhookDispatcher CreateDispatcher(
         IConfiguration config,
         RecordingHttpMessageHandler httpHandler,
+        IWebhookMetrics? metrics,
         bool textHandled,
         bool imageHandled,
         bool fileHandled)
     {
+        var actualMetrics = metrics ?? new FakeWebhookMetrics();
         var httpClient = new HttpClient(httpHandler);
-        var reply = new LineReplyService(httpClient, config);
+        var reply = new LineReplyService(httpClient, config, actualMetrics, NullLogger<LineReplyService>.Instance);
 
         return new LineWebhookDispatcher(
             new StaticResultTextHandler(textHandled),
             new StaticResultImageHandler(imageHandled),
             new StaticResultFileHandler(fileHandled),
-            reply);
+            reply,
+            actualMetrics,
+            NullLogger<LineWebhookDispatcher>.Instance);
     }
 
     public static Task<string> InvokeMergedTextReplyAsync(TextMessageHandler handler, string userKey, string userText, CancellationToken ct = default)

@@ -13,7 +13,7 @@ public class GeminiServiceTests
         {
             attempts.Add(request.RequestUri!.Query);
 
-            if (attempts.Count == 1)
+            if (attempts.Count <= 2)
                 return new HttpResponseMessage(HttpStatusCode.TooManyRequests);
 
             var response = new HttpResponseMessage(HttpStatusCode.OK)
@@ -41,8 +41,9 @@ public class GeminiServiceTests
         var reply = await service.GetReplyAsync("你好", "u1", CancellationToken.None);
 
         Assert.Equal("第二把 key 成功", reply);
-        Assert.Equal(2, attempts.Count);
+        Assert.Equal(3, attempts.Count);
         Assert.Contains("key=primary-key", attempts[0], StringComparison.Ordinal);
-        Assert.Contains("key=secondary-key", attempts[1], StringComparison.Ordinal);
+        Assert.Contains("key=primary-key", attempts[1], StringComparison.Ordinal);
+        Assert.Contains("key=secondary-key", attempts[2], StringComparison.Ordinal);
     }
 }

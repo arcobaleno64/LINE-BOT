@@ -5,6 +5,8 @@ namespace LineBotWebhook.Services;
 
 public class FileMessageHandler : IFileMessageHandler
 {
+    private const string HandlerType = "file";
+
     private readonly IConfiguration _config;
     private readonly IAiService _ai;
     private readonly LineReplyService _reply;
@@ -12,6 +14,7 @@ public class FileMessageHandler : IFileMessageHandler
     private readonly GeneratedFileService _files;
     private readonly UserRequestThrottleService _throttle;
     private readonly Ai429BackoffService _aiBackoff;
+    private readonly IWebhookMetrics _metrics;
     private readonly ILogger<FileMessageHandler> _logger;
 
     public FileMessageHandler(
@@ -22,6 +25,7 @@ public class FileMessageHandler : IFileMessageHandler
         GeneratedFileService files,
         UserRequestThrottleService throttle,
         Ai429BackoffService aiBackoff,
+        IWebhookMetrics metrics,
         ILogger<FileMessageHandler> logger)
     {
         _config = config;
@@ -31,6 +35,7 @@ public class FileMessageHandler : IFileMessageHandler
         _files = files;
         _throttle = throttle;
         _aiBackoff = aiBackoff;
+        _metrics = metrics;
         _logger = logger;
     }
 
@@ -45,11 +50,18 @@ public class FileMessageHandler : IFileMessageHandler
         var userKey = BuildUserKey(evt);
         if (!TryThrottle(userKey, evt.Message.Type, out var retryAfter))
         {
+            _metrics.RecordThrottleRejected(HandlerType, evt.Message.Type);
+            _logger.LogInformation(
+                "Throttle rejected {HandlerType} request for {UserKey}. MessageType={MessageType} RetryAfterSeconds={RetryAfterSeconds}",
+                HandlerType,
+                userKey,
+                evt.Message.Type,
+                retryAfter);
             await _reply.ReplyTextAsync(evt.ReplyToken!, $"訊息有點密集，請在 {retryAfter} 秒後再試。", ct);
             return true;
         }
 
-        _logger.LogInformation("Processing file message from {UserId}", evt.Source?.UserId);
+        _logger.LogInformation("Processing {HandlerType} message from {UserId}", HandlerType, evt.Source?.UserId ?? "unknown");
         var (bytes, mimeType) = await _content.DownloadMessageContentAsync(evt.Message.Id, ct);
         var fileName = evt.Message.FileName ?? "uploaded-file";
 
@@ -67,6 +79,7 @@ public class FileMessageHandler : IFileMessageHandler
         var aiReply = await TryGetAiReplyAsync(
             () => _ai.GetReplyFromDocumentAsync(fileName, mimeType, extractedText, "請幫我整理重點、關鍵結論與待辦事項。", userKey, ct),
             evt.ReplyToken!,
+            userKey,
             ct);
         if (aiReply is null)
             return true;
@@ -91,10 +104,16 @@ public class FileMessageHandler : IFileMessageHandler
         return true;
     }
 
-    private async Task<string?> TryGetAiReplyAsync(Func<Task<string>> aiCall, string replyToken, CancellationToken ct)
+    private async Task<string?> TryGetAiReplyAsync(Func<Task<string>> aiCall, string replyToken, string userKey, CancellationToken ct)
     {
         if (!_aiBackoff.TryPass(out var cooldownRemaining))
         {
+            _metrics.RecordAiBackoffRejected(HandlerType);
+            _logger.LogInformation(
+                "AI cooldown active for {HandlerType} request by {UserKey}. RetryAfterSeconds={RetryAfterSeconds}",
+                HandlerType,
+                userKey,
+                cooldownRemaining);
             await _reply.ReplyTextAsync(replyToken, $"目前流量較高，請約 {cooldownRemaining} 秒後再試。", ct);
             return null;
         }
@@ -105,17 +124,20 @@ public class FileMessageHandler : IFileMessageHandler
         }
         catch (Exception ex) when (IsTooManyRequests(ex))
         {
-            _logger.LogWarning(ex, "AI provider returned 429 Too Many Requests");
+            _metrics.RecordAiTooManyRequests(HandlerType);
             if (IsQuotaExhausted(ex))
             {
+                _metrics.RecordAiQuotaExhausted(HandlerType);
                 var quotaCooldown = GetIntConfig("App:AiQuotaCooldownSeconds", 300);
                 _aiBackoff.Trigger(quotaCooldown);
+                _logger.LogWarning(ex, "AI quota exhausted in {HandlerType} handler for {UserKey}", HandlerType, userKey);
                 await _reply.ReplyTextAsync(replyToken, "今日 AI 配額已達上限，請稍後或明天再試。", ct);
                 return null;
             }
 
             var cooldownSeconds = GetIntConfig("App:Ai429CooldownSeconds", 12);
             _aiBackoff.Trigger(cooldownSeconds);
+            _logger.LogWarning(ex, "AI 429 in {HandlerType} handler for {UserKey}", HandlerType, userKey);
             await _reply.ReplyTextAsync(replyToken, "目前流量較高，稍後再試。", ct);
             return null;
         }

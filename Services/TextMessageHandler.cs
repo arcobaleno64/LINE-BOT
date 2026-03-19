@@ -5,6 +5,8 @@ namespace LineBotWebhook.Services;
 
 public class TextMessageHandler : ITextMessageHandler
 {
+    private const string HandlerType = "text";
+
     private readonly IConfiguration _config;
     private readonly IAiService _ai;
     private readonly AiResponseCacheService _aiCache;
@@ -14,6 +16,7 @@ public class TextMessageHandler : ITextMessageHandler
     private readonly UserRequestThrottleService _throttle;
     private readonly Ai429BackoffService _aiBackoff;
     private readonly IDateTimeIntentResponder _dateTimeIntentResponder;
+    private readonly IWebhookMetrics _metrics;
     private readonly ILogger<TextMessageHandler> _logger;
 
     public TextMessageHandler(
@@ -26,6 +29,7 @@ public class TextMessageHandler : ITextMessageHandler
         UserRequestThrottleService throttle,
         Ai429BackoffService aiBackoff,
         IDateTimeIntentResponder dateTimeIntentResponder,
+        IWebhookMetrics metrics,
         ILogger<TextMessageHandler> logger)
     {
         _config = config;
@@ -37,6 +41,7 @@ public class TextMessageHandler : ITextMessageHandler
         _throttle = throttle;
         _aiBackoff = aiBackoff;
         _dateTimeIntentResponder = dateTimeIntentResponder;
+        _metrics = metrics;
         _logger = logger;
     }
 
@@ -55,7 +60,11 @@ public class TextMessageHandler : ITextMessageHandler
             return true;
         }
 
-        _logger.LogInformation("Processing text message from {UserId}: {Text}", evt.Source?.UserId, userText);
+        _logger.LogInformation(
+            "Processing {HandlerType} message from {UserId} with length {TextLength}",
+            HandlerType,
+            evt.Source?.UserId ?? "unknown",
+            userText.Length);
 
         if (_dateTimeIntentResponder.TryBuildReply(userText, out var dateTimeReply))
         {
@@ -66,6 +75,13 @@ public class TextMessageHandler : ITextMessageHandler
         var userKey = BuildUserKey(evt);
         if (!TryThrottle(userKey, evt.Message.Type, out var retryAfter))
         {
+            _metrics.RecordThrottleRejected(HandlerType, evt.Message.Type);
+            _logger.LogInformation(
+                "Throttle rejected {HandlerType} request for {UserKey}. MessageType={MessageType} RetryAfterSeconds={RetryAfterSeconds}",
+                HandlerType,
+                userKey,
+                evt.Message.Type,
+                retryAfter);
             await _reply.ReplyTextAsync(evt.ReplyToken!, $"訊息有點密集，請在 {retryAfter} 秒後再試。", ct);
             return true;
         }
@@ -89,7 +105,7 @@ public class TextMessageHandler : ITextMessageHandler
 {searchOutcome.ContextForAi}
 """;
 
-            var webAiReply = await TryGetAiReplyAsync(() => _ai.GetReplyAsync(prompt, userKey, ct), evt.ReplyToken!, ct);
+            var webAiReply = await TryGetAiReplyAsync(() => _ai.GetReplyAsync(prompt, userKey, ct), evt.ReplyToken!, userKey, ct);
             if (webAiReply is null)
                 return true;
 
@@ -110,10 +126,16 @@ public class TextMessageHandler : ITextMessageHandler
         return true;
     }
 
-    private async Task<string?> TryGetAiReplyAsync(Func<Task<string>> aiCall, string replyToken, CancellationToken ct)
+    private async Task<string?> TryGetAiReplyAsync(Func<Task<string>> aiCall, string replyToken, string userKey, CancellationToken ct)
     {
         if (!_aiBackoff.TryPass(out var cooldownRemaining))
         {
+            _metrics.RecordAiBackoffRejected(HandlerType);
+            _logger.LogInformation(
+                "AI cooldown active for {HandlerType} request by {UserKey}. RetryAfterSeconds={RetryAfterSeconds}",
+                HandlerType,
+                userKey,
+                cooldownRemaining);
             await _reply.ReplyTextAsync(replyToken, $"目前流量較高，請約 {cooldownRemaining} 秒後再試。", ct);
             return null;
         }
@@ -124,17 +146,20 @@ public class TextMessageHandler : ITextMessageHandler
         }
         catch (Exception ex) when (IsTooManyRequests(ex))
         {
-            _logger.LogWarning(ex, "AI provider returned 429 Too Many Requests");
+            _metrics.RecordAiTooManyRequests(HandlerType);
             if (IsQuotaExhausted(ex))
             {
+                _metrics.RecordAiQuotaExhausted(HandlerType);
                 var quotaCooldown = GetIntConfig("App:AiQuotaCooldownSeconds", 300);
                 _aiBackoff.Trigger(quotaCooldown);
+                _logger.LogWarning(ex, "AI quota exhausted in {HandlerType} handler for {UserKey}", HandlerType, userKey);
                 await _reply.ReplyTextAsync(replyToken, "今日 AI 配額已達上限，請稍後或明天再試。", ct);
                 return null;
             }
 
             var cooldownSeconds = GetIntConfig("App:Ai429CooldownSeconds", 12);
             _aiBackoff.Trigger(cooldownSeconds);
+            _logger.LogWarning(ex, "AI 429 in {HandlerType} handler for {UserKey}", HandlerType, userKey);
             await _reply.ReplyTextAsync(replyToken, "目前流量較高，稍後再試。", ct);
             return null;
         }
@@ -145,7 +170,11 @@ public class TextMessageHandler : ITextMessageHandler
         var cacheKey = BuildTextCacheKey(userKey, userText);
         if (_aiCache.TryGet(cacheKey, out var cachedReply))
         {
-            _logger.LogInformation("Returning cached AI reply for key {CacheKey}", cacheKey);
+            _metrics.RecordCacheHit(HandlerType);
+            _logger.LogInformation(
+                "Cache hit in {HandlerType} handler for key {CacheKeyHash}",
+                HandlerType,
+                ObservabilityKeyFingerprint.From(cacheKey));
             return cachedReply;
         }
 
@@ -153,10 +182,25 @@ public class TextMessageHandler : ITextMessageHandler
         var mergeExecution = _inFlightMerge.JoinOrRun(mergeKey, async () =>
         {
             if (_aiCache.TryGet(cacheKey, out var hotCachedReply))
+            {
+                _metrics.RecordCacheHit(HandlerType);
+                _logger.LogInformation(
+                    "Cache hit in {HandlerType} handler for key {CacheKeyHash}",
+                    HandlerType,
+                    ObservabilityKeyFingerprint.From(cacheKey));
                 return hotCachedReply;
+            }
 
             if (!_aiBackoff.TryPass(out var cooldownRemaining))
+            {
+                _metrics.RecordAiBackoffRejected(HandlerType);
+                _logger.LogInformation(
+                    "AI cooldown active for {HandlerType} request by {UserKey}. RetryAfterSeconds={RetryAfterSeconds}",
+                    HandlerType,
+                    userKey,
+                    cooldownRemaining);
                 return $"目前流量較高，請約 {cooldownRemaining} 秒後再試。";
+            }
 
             try
             {
@@ -170,22 +214,31 @@ public class TextMessageHandler : ITextMessageHandler
             }
             catch (Exception ex) when (IsTooManyRequests(ex))
             {
-                _logger.LogWarning(ex, "AI provider returned 429 Too Many Requests");
+                _metrics.RecordAiTooManyRequests(HandlerType);
                 if (IsQuotaExhausted(ex))
                 {
+                    _metrics.RecordAiQuotaExhausted(HandlerType);
                     var quotaCooldown = GetIntConfig("App:AiQuotaCooldownSeconds", 300);
                     _aiBackoff.Trigger(quotaCooldown);
+                    _logger.LogWarning(ex, "AI quota exhausted in {HandlerType} handler for {UserKey}", HandlerType, userKey);
                     return "今日 AI 配額已達上限，請稍後或明天再試。";
                 }
 
                 var cooldownSeconds = GetIntConfig("App:Ai429CooldownSeconds", 12);
                 _aiBackoff.Trigger(cooldownSeconds);
+                _logger.LogWarning(ex, "AI 429 in {HandlerType} handler for {UserKey}", HandlerType, userKey);
                 return "目前流量較高，稍後再試。";
             }
         });
 
         if (mergeExecution.JoinedExisting)
-            _logger.LogInformation("Merged duplicate text request into existing in-flight call. Key: {MergeKey}", mergeKey);
+        {
+            _metrics.RecordMergeJoined(HandlerType);
+            _logger.LogInformation(
+                "Merged duplicate request in {HandlerType} handler for key {MergeKeyHash}",
+                HandlerType,
+                ObservabilityKeyFingerprint.From(mergeKey));
+        }
 
         return await mergeExecution.Task;
     }

@@ -14,10 +14,12 @@ public class CharacterizationTests
     public async Task InvalidSignature_Returns401()
     {
         var dispatcher = new FakeDispatcher();
+        var metrics = new FakeWebhookMetrics();
         var controller = new LineWebhookController(
             signatureVerifier: new AlwaysFalseSignatureVerifier(),
             publicBaseUrlResolver: new PublicBaseUrlResolver(TestFactory.BuildConfig()),
             dispatcher: dispatcher,
+            metrics: metrics,
             logger: NullLogger<LineWebhookController>.Instance)
         {
             ControllerContext = new ControllerContext
@@ -36,10 +38,12 @@ public class CharacterizationTests
     public async Task EmptyEvents_Returns200()
     {
         var dispatcher = new FakeDispatcher();
+        var metrics = new FakeWebhookMetrics();
         var controller = new LineWebhookController(
             signatureVerifier: new AlwaysTrueSignatureVerifier(),
             publicBaseUrlResolver: new PublicBaseUrlResolver(TestFactory.BuildConfig()),
             dispatcher: dispatcher,
+            metrics: metrics,
             logger: NullLogger<LineWebhookController>.Instance)
         {
             ControllerContext = new ControllerContext
@@ -58,6 +62,7 @@ public class CharacterizationTests
     public async Task Webhook_ValidBody_Returns200_AndDispatchesEvent()
     {
         var dispatcher = new FakeDispatcher();
+        var metrics = new FakeWebhookMetrics();
         var evt = new LineEvent
         {
             Type = "message",
@@ -70,6 +75,7 @@ public class CharacterizationTests
             signatureVerifier: new AlwaysTrueSignatureVerifier(),
             publicBaseUrlResolver: new PublicBaseUrlResolver(TestFactory.BuildConfig()),
             dispatcher: dispatcher,
+            metrics: metrics,
             logger: NullLogger<LineWebhookController>.Instance)
         {
             ControllerContext = new ControllerContext
@@ -403,7 +409,7 @@ public class CharacterizationTests
     {
         var config = TestFactory.BuildConfig();
         var handler = new RecordingHttpMessageHandler((request, ct) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)));
-        var dispatcher = TestFactory.CreateDispatcher(config, handler, textHandled: false, imageHandled: false, fileHandled: false);
+        var dispatcher = TestFactory.CreateDispatcher(config, handler, metrics: new FakeWebhookMetrics(), textHandled: false, imageHandled: false, fileHandled: false);
 
         var evt = new LineEvent
         {
@@ -424,7 +430,7 @@ public class CharacterizationTests
     {
         var config = TestFactory.BuildConfig();
         var handler = new RecordingHttpMessageHandler((request, ct) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)));
-        var dispatcher = TestFactory.CreateDispatcher(config, handler, textHandled: false, imageHandled: false, fileHandled: false);
+        var dispatcher = TestFactory.CreateDispatcher(config, handler, metrics: new FakeWebhookMetrics(), textHandled: false, imageHandled: false, fileHandled: false);
 
         var evt = new LineEvent
         {

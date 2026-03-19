@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
@@ -10,20 +11,26 @@ public class LineReplyService
     private const string ReplyUrl = "https://api.line.me/v2/bot/message/reply";
     private const int MaxLineTextLength = 5000;
     private const int MaxLineMessagesPerReply = 5;
+
     private readonly HttpClient _http;
     private readonly string _accessToken;
+    private readonly IWebhookMetrics _metrics;
+    private readonly ILogger<LineReplyService> _logger;
 
-    public LineReplyService(HttpClient http, IConfiguration config)
+    public LineReplyService(HttpClient http, IConfiguration config, IWebhookMetrics metrics, ILogger<LineReplyService> logger)
     {
-        _http        = http;
+        _http = http;
         _accessToken = config["Line:ChannelAccessToken"]
             ?? throw new InvalidOperationException("Missing Line:ChannelAccessToken");
+        _metrics = metrics;
+        _logger = logger;
     }
 
     /// <summary>回覆文字訊息</summary>
     public async Task ReplyTextAsync(string replyToken, string text, CancellationToken ct = default)
     {
         var chunks = SplitIntoLineMessages(text);
+        var replyFailedRecorded = false;
 
         var payload = new
         {
@@ -37,8 +44,39 @@ public class LineReplyService
         };
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);
 
-        var response = await _http.SendAsync(request, ct);
-        response.EnsureSuccessStatusCode();
+        try
+        {
+            using var response = await _http.SendAsync(request, ct);
+            if (!response.IsSuccessStatusCode)
+            {
+                replyFailedRecorded = true;
+                _metrics.RecordReplyFailed((int)response.StatusCode);
+                _logger.LogError(
+                    "Failed to send LINE reply. StatusCode={StatusCode} MessageCount={MessageCount}",
+                    (int)response.StatusCode,
+                    chunks.Count);
+                response.EnsureSuccessStatusCode();
+            }
+
+            _metrics.RecordReplySent(chunks.Count);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            if (!replyFailedRecorded)
+            {
+                var statusCode = ex is HttpRequestException httpEx && httpEx.StatusCode is HttpStatusCode code
+                    ? (int?)code
+                    : null;
+                _metrics.RecordReplyFailed(statusCode);
+                _logger.LogError(
+                    ex,
+                    "Failed to send LINE reply. StatusCode={StatusCode} MessageCount={MessageCount}",
+                    statusCode,
+                    chunks.Count);
+            }
+
+            throw;
+        }
     }
 
     private static IReadOnlyList<string> SplitIntoLineMessages(string text)

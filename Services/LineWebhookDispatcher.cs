@@ -8,17 +8,23 @@ public class LineWebhookDispatcher : ILineWebhookDispatcher
     private readonly IImageMessageHandler _imageMessageHandler;
     private readonly IFileMessageHandler _fileMessageHandler;
     private readonly LineReplyService _reply;
+    private readonly IWebhookMetrics _metrics;
+    private readonly ILogger<LineWebhookDispatcher> _logger;
 
     public LineWebhookDispatcher(
         ITextMessageHandler textMessageHandler,
         IImageMessageHandler imageMessageHandler,
         IFileMessageHandler fileMessageHandler,
-        LineReplyService reply)
+        LineReplyService reply,
+        IWebhookMetrics metrics,
+        ILogger<LineWebhookDispatcher> logger)
     {
         _textMessageHandler = textMessageHandler;
         _imageMessageHandler = imageMessageHandler;
         _fileMessageHandler = fileMessageHandler;
         _reply = reply;
+        _metrics = metrics;
+        _logger = logger;
     }
 
     public Task DispatchAsync(LineEvent evt, string publicBaseUrl, CancellationToken ct)
@@ -35,17 +41,58 @@ public class LineWebhookDispatcher : ILineWebhookDispatcher
             return;
 
         if (await _textMessageHandler.HandleAsync(evt, publicBaseUrl, ct))
+        {
+            _metrics.RecordMessageHandled("text", evt.Source?.Type);
+            _logger.LogInformation(
+                "Dispatched event {EventId} to {HandlerType} for message type {MessageType} from {SourceType}",
+                evt.WebhookEventId,
+                "text",
+                evt.Message.Type,
+                evt.Source?.Type ?? "unknown");
             return;
+        }
 
         if (await _imageMessageHandler.HandleAsync(evt, publicBaseUrl, ct))
+        {
+            _metrics.RecordMessageHandled("image", evt.Source?.Type);
+            _logger.LogInformation(
+                "Dispatched event {EventId} to {HandlerType} for message type {MessageType} from {SourceType}",
+                evt.WebhookEventId,
+                "image",
+                evt.Message.Type,
+                evt.Source?.Type ?? "unknown");
             return;
+        }
 
         if (await _fileMessageHandler.HandleAsync(evt, publicBaseUrl, ct))
+        {
+            _metrics.RecordMessageHandled("file", evt.Source?.Type);
+            _logger.LogInformation(
+                "Dispatched event {EventId} to {HandlerType} for message type {MessageType} from {SourceType}",
+                evt.WebhookEventId,
+                "file",
+                evt.Message.Type,
+                evt.Source?.Type ?? "unknown");
             return;
+        }
+
+        _metrics.RecordMessageHandled("unsupported", evt.Source?.Type);
 
         if (evt.Source?.Type == "user")
         {
+            _logger.LogInformation(
+                "Unsupported fallback for event {EventId} with message type {MessageType} from {SourceType}",
+                evt.WebhookEventId,
+                evt.Message.Type,
+                evt.Source?.Type ?? "unknown");
             await _reply.ReplyTextAsync(evt.ReplyToken, "目前我支援文字、圖片與檔案（txt/md/csv/json/xml/log/pdf）。PDF 目前先支援文字型 PDF。", ct);
+            return;
         }
+
+        _logger.LogInformation(
+            "Ignored unsupported event {EventId} with message type {MessageType} from {SourceType}",
+            evt.WebhookEventId,
+            evt.Message.Type,
+            evt.Source?.Type ?? "unknown");
     }
 }

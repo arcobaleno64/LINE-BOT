@@ -7,6 +7,8 @@ builder.Services.AddHttpClient();
 
 // ---------- DI: Conversation History ----------
 builder.Services.AddSingleton(new ConversationHistoryService(maxRounds: 15, idleMinutes: -1));
+builder.Services.AddSingleton<IWebhookMetrics, WebhookMetrics>();
+builder.Services.AddSingleton<IWebhookReadinessService, WebhookReadinessService>();
 
 // ---------- DI: AI Service (主 provider + 自動 failover) ----------
 builder.Services.AddSingleton<IAiService>(sp =>
@@ -20,7 +22,9 @@ builder.Services.AddSingleton<IAiService>(sp =>
 builder.Services.AddSingleton<LineReplyService>(sp =>
     new LineReplyService(
         sp.GetRequiredService<IHttpClientFactory>().CreateClient(),
-        sp.GetRequiredService<IConfiguration>()));
+        sp.GetRequiredService<IConfiguration>(),
+        sp.GetRequiredService<IWebhookMetrics>(),
+        sp.GetRequiredService<ILogger<LineReplyService>>()));
 
 // ---------- DI: LINE Content Service (下載圖片/檔案) ----------
 builder.Services.AddSingleton<LineContentService>(sp =>
@@ -53,6 +57,10 @@ builder.Services.AddSingleton<WebSearchService>(sp =>
 builder.Services.AddControllers();
 
 var app = builder.Build();
+app.Lifetime.ApplicationStarted.Register(() =>
+{
+    app.Services.GetRequiredService<IWebhookReadinessService>().MarkStarted();
+});
 
 if (app.Environment.IsDevelopment())
 {
@@ -62,5 +70,10 @@ if (app.Environment.IsDevelopment())
 app.MapControllers();
 app.MapGet("/", () => Results.Ok("LINE Bot Webhook is running"));
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
+app.MapGet("/ready", (IWebhookReadinessService readiness) =>
+{
+    var snapshot = readiness.GetSnapshot();
+    return Results.Json(snapshot, statusCode: snapshot.IsReady ? StatusCodes.Status200OK : StatusCodes.Status503ServiceUnavailable);
+});
 
 app.Run();
