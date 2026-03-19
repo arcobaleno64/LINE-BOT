@@ -87,17 +87,18 @@ public class CharacterizationTests
     }
 
     [Theory]
-    [InlineData("今天：（幾號）")]
-    [InlineData("現在：幾點")]
-    [InlineData("今天;星期幾")]
-    public void DateTimeIntentResponder_Parity_WithPunctuationInputs(string input)
+    [InlineData("現在：幾點", "現在時間：")]
+    [InlineData("今天：（幾號）", "今天日期：")]
+    [InlineData("今天;星期幾", "今天：星期")]
+    public void DateTimeIntentResponder_Parity_ValidatesSemanticOutput(string input, string expectedKeyPhrase)
     {
         var responder = new DateTimeIntentResponder(TestFactory.BuildConfig());
 
         var hit = responder.TryBuildReply(input, out var reply);
 
-        Assert.True(hit);
-        Assert.False(string.IsNullOrWhiteSpace(reply));
+        Assert.True(hit, $"Should recognize intent in '{input}'");
+        Assert.NotNull(reply);
+        Assert.Contains(expectedKeyPhrase, reply, StringComparison.Ordinal);
     }
 
     [Fact]

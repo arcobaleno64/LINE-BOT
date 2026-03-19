@@ -1,5 +1,4 @@
 using System.Net;
-using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using LineBotWebhook.Models;
@@ -247,10 +246,6 @@ internal static class TestFactory
 
     public static Task<string> InvokeMergedTextReplyAsync(TextMessageHandler handler, string userKey, string userText, CancellationToken ct = default)
     {
-        var method = typeof(TextMessageHandler).GetMethod("GetMergedTextReplyAsync", BindingFlags.Instance | BindingFlags.NonPublic)
-            ?? throw new InvalidOperationException("GetMergedTextReplyAsync not found.");
-
-        var task = method.Invoke(handler, [userKey, userText, ct]) as Task<string>;
-        return task ?? throw new InvalidOperationException("GetMergedTextReplyAsync returned null.");
+        return handler.GetMergedTextReplyAsync(userKey, userText, ct);
     }
 }

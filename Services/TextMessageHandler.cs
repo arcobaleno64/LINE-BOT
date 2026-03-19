@@ -140,7 +140,7 @@ public class TextMessageHandler : ITextMessageHandler
         }
     }
 
-    private async Task<string> GetMergedTextReplyAsync(string userKey, string userText, CancellationToken ct)
+    internal async Task<string> GetMergedTextReplyAsync(string userKey, string userText, CancellationToken ct)
     {
         var cacheKey = BuildTextCacheKey(userKey, userText);
         if (_aiCache.TryGet(cacheKey, out var cachedReply))
