@@ -59,6 +59,12 @@ public class LineMessage
     [JsonPropertyName("text")]
     public string? Text { get; set; }
 
+    [JsonPropertyName("fileName")]
+    public string? FileName { get; set; }
+
+    [JsonPropertyName("fileSize")]
+    public long? FileSize { get; set; }
+
     [JsonPropertyName("mention")]
     public LineMention? Mention { get; set; }
 }

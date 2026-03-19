@@ -52,4 +52,32 @@ public class OpenAiService : IAiService
         _history.Append(userKey, userMessage, content);
         return content;
     }
+
+    public Task<string> GetReplyFromImageAsync(byte[] imageBytes, string mimeType, string userPrompt, string userKey, CancellationToken ct = default)
+    {
+        var prompt = string.IsNullOrWhiteSpace(userPrompt)
+            ? "使用者上傳了一張圖片，但目前提供者未啟用圖片解析。請禮貌說明可改用 Gemini，或請使用者補充文字描述後我再協助。"
+            : $"使用者上傳了一張圖片，補充需求：{userPrompt}。目前提供者未啟用圖片解析。請禮貌說明可改用 Gemini，或請使用者補充文字描述後我再協助。";
+        return GetReplyAsync(prompt, userKey, ct);
+    }
+
+    public Task<string> GetReplyFromDocumentAsync(string fileName, string mimeType, string extractedText, string userPrompt, string userKey, CancellationToken ct = default)
+    {
+        const int maxChars = 12000;
+        var clipped = extractedText.Length > maxChars
+            ? extractedText[..maxChars] + "\n\n[已截斷，僅分析前段內容]"
+            : extractedText;
+
+        var prompt = $"""
+你收到一個檔案，請協助整理重點。
+檔名：{fileName}
+MIME：{mimeType}
+使用者需求：{(string.IsNullOrWhiteSpace(userPrompt) ? "請整理摘要與重點" : userPrompt)}
+
+以下是檔案文字內容：
+{clipped}
+""";
+
+        return GetReplyAsync(prompt, userKey, ct);
+    }
 }

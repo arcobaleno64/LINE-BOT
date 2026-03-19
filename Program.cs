@@ -44,6 +44,12 @@ builder.Services.AddSingleton<LineReplyService>(sp =>
         sp.GetRequiredService<IHttpClientFactory>().CreateClient(),
         sp.GetRequiredService<IConfiguration>()));
 
+// ---------- DI: LINE Content Service (下載圖片/檔案) ----------
+builder.Services.AddSingleton<LineContentService>(sp =>
+    new LineContentService(
+        sp.GetRequiredService<IHttpClientFactory>().CreateClient(),
+        sp.GetRequiredService<IConfiguration>()));
+
 // ---------- MVC Controllers ----------
 builder.Services.AddControllers();
 

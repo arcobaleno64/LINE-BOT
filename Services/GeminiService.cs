@@ -6,6 +6,8 @@ namespace LineBotWebhook.Services;
 
 public class GeminiService : IAiService
 {
+    private const string ButlerPrompt = "你是一位親切的管家，語氣溫暖有禮、回答精簡實用，必要時可條列重點。請全程使用繁體中文，並避免自稱是 AI。";
+
     private readonly HttpClient _http;
     private readonly string _apiKey;
     private readonly string _model;
@@ -14,39 +16,113 @@ public class GeminiService : IAiService
 
     public GeminiService(HttpClient http, IConfiguration config, ConversationHistoryService history)
     {
-        _http     = http;
-        _apiKey   = config["Ai:Gemini:ApiKey"] ?? throw new InvalidOperationException("Missing Ai:Gemini:ApiKey");
-        _model    = config["Ai:Gemini:Model"] ?? "gemini-2.5-flash";
+        _http = http;
+        _apiKey = config["Ai:Gemini:ApiKey"] ?? throw new InvalidOperationException("Missing Ai:Gemini:ApiKey");
+        _model = config["Ai:Gemini:Model"] ?? "gemini-2.5-flash";
         _endpoint = config["Ai:Gemini:Endpoint"] ?? "https://generativelanguage.googleapis.com/v1beta/models";
-        _history  = history;
+        _history = history;
     }
 
     public async Task<string> GetReplyAsync(string userMessage, string userKey, CancellationToken ct = default)
     {
-        var url = $"{_endpoint.TrimEnd('/')}/{_model}:generateContent?key={_apiKey}";
-
-        // 組合歷史對話 + 本次訊息
         var history = _history.GetHistory(userKey);
         var contents = history
-            .Select(m => new { role = m.Role == "assistant" ? "model" : "user",
-                               parts = new[] { new { text = m.Content } } })
-            .Append(new { role = "user",
-                          parts = new[] { new { text = userMessage } } })
+            .Select(m => new
+            {
+                role = m.Role == "assistant" ? "model" : "user",
+                parts = new[] { new { text = m.Content } }
+            })
+            .Append(new
+            {
+                role = "user",
+                parts = new[] { new { text = userMessage } }
+            })
             .ToArray();
 
-        var payload = new
-        {
-            contents,
-            systemInstruction = new
+        var payload = BuildPayload(contents);
+        var text = await SendWithRetryAsync(payload, ct);
+        _history.Append(userKey, userMessage, text);
+        return text;
+    }
+
+    public async Task<string> GetReplyFromImageAsync(byte[] imageBytes, string mimeType, string userPrompt, string userKey, CancellationToken ct = default)
+    {
+        var history = _history.GetHistory(userKey)
+            .Select(m => new
             {
-                parts = new[] { new { text = "你是一位親切的管家，語氣溫暖有禮、回答精簡實用，必要時可條列重點。請全程使用繁體中文，並避免自稱是 AI。" } }
-            },
-            generationConfig = new { maxOutputTokens = 2048 }
+                role = m.Role == "assistant" ? "model" : "user",
+                parts = new[] { new { text = m.Content } }
+            })
+            .Cast<object>();
+
+        var prompt = string.IsNullOrWhiteSpace(userPrompt)
+            ? "請協助分析這張圖片重點。"
+            : userPrompt;
+
+        var imagePart = new
+        {
+            role = "user",
+            parts = new object[]
+            {
+                new { text = prompt },
+                new
+                {
+                    inline_data = new
+                    {
+                        mime_type = mimeType,
+                        data = Convert.ToBase64String(imageBytes)
+                    }
+                }
+            }
         };
 
+        var contents = history.Append(imagePart).ToArray();
+        var payload = BuildPayload(contents);
+
+        var text = await SendWithRetryAsync(payload, ct);
+        var userInput = string.IsNullOrWhiteSpace(userPrompt)
+            ? "[使用者上傳一張圖片，請分析]"
+            : $"[使用者上傳一張圖片] {userPrompt}";
+
+        _history.Append(userKey, userInput, text);
+        return text;
+    }
+
+    public Task<string> GetReplyFromDocumentAsync(string fileName, string mimeType, string extractedText, string userPrompt, string userKey, CancellationToken ct = default)
+    {
+        const int maxChars = 12000;
+        var clipped = extractedText.Length > maxChars
+            ? extractedText[..maxChars] + "\n\n[已截斷，僅分析前段內容]"
+            : extractedText;
+
+        var prompt = $"""
+你收到一個檔案，請協助整理重點。
+檔名：{fileName}
+MIME：{mimeType}
+使用者需求：{(string.IsNullOrWhiteSpace(userPrompt) ? "請整理摘要與重點" : userPrompt)}
+
+以下是檔案文字內容：
+{clipped}
+""";
+
+        return GetReplyAsync(prompt, userKey, ct);
+    }
+
+    private object BuildPayload(object contents) => new
+    {
+        contents,
+        systemInstruction = new
+        {
+            parts = new[] { new { text = ButlerPrompt } }
+        },
+        generationConfig = new { maxOutputTokens = 2048 }
+    };
+
+    private async Task<string> SendWithRetryAsync(object payload, CancellationToken ct)
+    {
+        var url = $"{_endpoint.TrimEnd('/')}/{_model}:generateContent?key={_apiKey}";
         var body = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
 
-        // 遇到 429 最多重試 3 次，每次等待間隔加倍
         int[] retryDelaysMs = [2000, 5000, 10000];
         for (int attempt = 0; ; attempt++)
         {
@@ -77,13 +153,12 @@ public class GeminiService : IAiService
             if (string.IsNullOrWhiteSpace(text))
                 return "(AI 無回應)";
 
-            // 若因 token 上限截斷，補上提示
             if (candidate.TryGetProperty("finishReason", out var reason) &&
                 reason.GetString() == "MAX_TOKENS")
+            {
                 text += "\n\n⚠️ 回答已達字數上限，如需後續請繼續提問。";
+            }
 
-            // 成功後寫入歷史
-            _history.Append(userKey, userMessage, text);
             return text;
         }
     }

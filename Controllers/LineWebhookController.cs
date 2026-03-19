@@ -9,25 +9,20 @@ namespace LineBotWebhook.Controllers;
 
 [ApiController]
 [Route("api/line")]
-public class LineWebhookController : ControllerBase
+public class LineWebhookController(
+    IConfiguration config,
+    IAiService ai,
+    LineReplyService reply,
+    LineContentService content,
+    ILogger<LineWebhookController> logger) : ControllerBase
 {
-    private readonly string _channelSecret;
-    private readonly IAiService _ai;
-    private readonly LineReplyService _reply;
-    private readonly ILogger<LineWebhookController> _logger;
-
-    public LineWebhookController(
-        IConfiguration config,
-        IAiService ai,
-        LineReplyService reply,
-        ILogger<LineWebhookController> logger)
-    {
-        _channelSecret = config["Line:ChannelSecret"]
+    private readonly string _channelSecret = config["Line:ChannelSecret"]
             ?? throw new InvalidOperationException("Missing Line:ChannelSecret");
-        _ai     = ai;
-        _reply  = reply;
-        _logger = logger;
-    }
+    private readonly IAiService _ai = ai;
+    private readonly LineReplyService _reply = reply;
+    private readonly LineContentService _content = content;
+    private readonly ILogger<LineWebhookController> _logger = logger;
+
 
     /// <summary>LINE Messaging API Webhook Endpoint</summary>
     [HttpPost("webhook")]
@@ -63,40 +58,83 @@ public class LineWebhookController : ControllerBase
                     _logger.LogError(ex, "Error handling event {EventId}", evt.WebhookEventId);
                 }
             }
-        }, ct);
+        }, CancellationToken.None);
 
         return Ok();
     }
 
     private async Task HandleEventAsync(LineEvent evt, CancellationToken ct)
     {
-        // 只處理 text message，並套用 @mention gate
-        if (!MentionGateService.ShouldHandle(evt))
+        if (evt.Type != "message" || evt.Message is null)
             return;
 
         if (string.IsNullOrEmpty(evt.ReplyToken))
             return;
 
-        // 移除 @mention 文字，取得使用者的真正訊息
-        var userText = MentionGateService.StripMention(evt.Message!);
-        if (string.IsNullOrWhiteSpace(userText))
+        // 組合 user key：群組/聊天室 + 使用者 ID
+        var sourceId = evt.Source?.GroupId ?? evt.Source?.RoomId ?? evt.Source?.UserId ?? "unknown";
+        var userId = evt.Source?.UserId ?? "unknown";
+        var userKey = $"{sourceId}:{userId}";
+
+        if (evt.Message.Type == "text")
         {
-            await _reply.ReplyTextAsync(evt.ReplyToken, "請問有什麼我能幫忙的嗎？", ct);
+            if (!MentionGateService.ShouldHandle(evt))
+                return;
+
+            var userText = MentionGateService.StripMention(evt.Message);
+            if (string.IsNullOrWhiteSpace(userText))
+            {
+                await _reply.ReplyTextAsync(evt.ReplyToken, "請問有什麼我能幫忙的嗎？", ct);
+                return;
+            }
+
+            _logger.LogInformation("Processing text message from {UserId}: {Text}", evt.Source?.UserId, userText);
+            var aiReply = await _ai.GetReplyAsync(userText, userKey, ct);
+            await _reply.ReplyTextAsync(evt.ReplyToken, aiReply, ct);
             return;
         }
 
-        _logger.LogInformation("Processing message from {UserId}: {Text}", evt.Source?.UserId, userText);
+        if (evt.Message.Type == "image")
+        {
+            if (evt.Source?.Type is "group" or "room")
+                return;
 
-        // 組合 user key：群組/聊天室 + 使用者 ID
-        var sourceId = evt.Source?.GroupId ?? evt.Source?.RoomId ?? evt.Source?.UserId ?? "unknown";
-        var userId   = evt.Source?.UserId ?? "unknown";
-        var userKey  = $"{sourceId}:{userId}";
+            _logger.LogInformation("Processing image message from {UserId}", evt.Source?.UserId);
+            var (bytes, mimeType) = await _content.DownloadMessageContentAsync(evt.Message.Id, ct);
+            var aiReply = await _ai.GetReplyFromImageAsync(bytes, mimeType, "請幫我分析這張圖片重點。", userKey, ct);
+            await _reply.ReplyTextAsync(evt.ReplyToken, aiReply, ct);
+            return;
+        }
 
-        // 呼叫 AI 取得回覆
-        var aiReply = await _ai.GetReplyAsync(userText, userKey, ct);
+        if (evt.Message.Type == "file")
+        {
+            if (evt.Source?.Type is "group" or "room")
+                return;
 
-        // 透過 LINE Reply API 回覆
-        await _reply.ReplyTextAsync(evt.ReplyToken, aiReply, ct);
+            _logger.LogInformation("Processing file message from {UserId}", evt.Source?.UserId);
+            var (bytes, mimeType) = await _content.DownloadMessageContentAsync(evt.Message.Id, ct);
+            var fileName = evt.Message.FileName ?? "uploaded-file";
+
+            string extractedText;
+            try
+            {
+                extractedText = _content.ExtractTextFromFile(bytes, fileName, mimeType);
+            }
+            catch (NotSupportedException)
+            {
+                await _reply.ReplyTextAsync(evt.ReplyToken, "目前先支援文字型檔案（txt/md/csv/json/xml/log）。你也可以先把內容貼成文字，我可以馬上幫你整理。", ct);
+                return;
+            }
+
+            var aiReply = await _ai.GetReplyFromDocumentAsync(fileName, mimeType, extractedText, "請幫我整理重點、關鍵結論與待辦事項。", userKey, ct);
+            await _reply.ReplyTextAsync(evt.ReplyToken, aiReply, ct);
+            return;
+        }
+
+        if (evt.Source?.Type == "user")
+        {
+            await _reply.ReplyTextAsync(evt.ReplyToken, "目前我支援文字、圖片與文字型檔案（txt/md/csv/json/xml/log）。", ct);
+        }
     }
 
     /// <summary>HMAC-SHA256 簽章驗證</summary>
