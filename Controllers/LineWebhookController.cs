@@ -15,6 +15,7 @@ public class LineWebhookController(
     IConfiguration config,
     IAiService ai,
     AiResponseCacheService aiCache,
+    InFlightRequestMergeService inFlightMerge,
     LineReplyService reply,
     LineContentService content,
     GeneratedFileService files,
@@ -28,6 +29,7 @@ public class LineWebhookController(
             ?? throw new InvalidOperationException("Missing Line:ChannelSecret");
     private readonly IAiService _ai = ai;
     private readonly AiResponseCacheService _aiCache = aiCache;
+    private readonly InFlightRequestMergeService _inFlightMerge = inFlightMerge;
     private readonly LineReplyService _reply = reply;
     private readonly LineContentService _content = content;
     private readonly GeneratedFileService _files = files;
@@ -164,16 +166,8 @@ public class LineWebhookController(
                 return;
             }
 
-            var aiReply = await TryGetAiReplyAsync(
-                () => _ai.GetReplyAsync(userText, userKey, ct),
-                evt.ReplyToken,
-                userKey,
-                userText,
-                ct);
-            if (aiReply is null)
-                return;
-
-            await _reply.ReplyTextAsync(evt.ReplyToken, aiReply, ct);
+            var textReply = await GetMergedTextReplyAsync(userKey, userText, ct);
+            await _reply.ReplyTextAsync(evt.ReplyToken, textReply, ct);
             return;
         }
 
@@ -290,7 +284,7 @@ public class LineWebhookController(
         }
     }
 
-    private async Task<string?> TryGetAiReplyAsync(Func<Task<string>> aiCall, string replyToken, string userKey, string userText, CancellationToken ct)
+    private async Task<string> GetMergedTextReplyAsync(string userKey, string userText, CancellationToken ct)
     {
         var cacheKey = BuildTextCacheKey(userKey, userText);
         if (_aiCache.TryGet(cacheKey, out var cachedReply))
@@ -299,13 +293,40 @@ public class LineWebhookController(
             return cachedReply;
         }
 
-        var aiReply = await TryGetAiReplyAsync(aiCall, replyToken, ct);
-        if (string.IsNullOrWhiteSpace(aiReply))
-            return aiReply;
+        var mergeKey = BuildTextMergeKey(userKey, userText);
+        return await _inFlightMerge.RunAsync(mergeKey, async () =>
+        {
+            if (_aiCache.TryGet(cacheKey, out var hotCachedReply))
+                return hotCachedReply;
 
-        var cacheTtlSeconds = GetIntConfig("App:AiResponseCacheSeconds", 180);
-        _aiCache.Set(cacheKey, aiReply, cacheTtlSeconds);
-        return aiReply;
+            if (!_aiBackoff.TryPass(out var cooldownRemaining))
+                return $"目前流量較高，請約 {cooldownRemaining} 秒後再試。";
+
+            try
+            {
+                var aiReply = await _ai.GetReplyAsync(userText, userKey, ct);
+                if (string.IsNullOrWhiteSpace(aiReply))
+                    return "(AI 無回應)";
+
+                var cacheTtlSeconds = GetIntConfig("App:AiResponseCacheSeconds", 180);
+                _aiCache.Set(cacheKey, aiReply, cacheTtlSeconds);
+                return aiReply;
+            }
+            catch (Exception ex) when (IsTooManyRequests(ex))
+            {
+                _logger.LogWarning(ex, "AI provider returned 429 Too Many Requests");
+                if (IsQuotaExhausted(ex))
+                {
+                    var quotaCooldown = GetIntConfig("App:AiQuotaCooldownSeconds", 300);
+                    _aiBackoff.Trigger(quotaCooldown);
+                    return "今日 AI 配額已達上限，請稍後或明天再試。";
+                }
+
+                var cooldownSeconds = GetIntConfig("App:Ai429CooldownSeconds", 12);
+                _aiBackoff.Trigger(cooldownSeconds);
+                return "目前流量較高，稍後再試。";
+            }
+        });
     }
 
     private bool TryThrottle(string userKey, string messageType, out int retryAfter)
@@ -367,6 +388,13 @@ public class LineWebhookController(
 
     private static string BuildTextCacheKey(string userKey, string userText)
         => $"{userKey}:text:{NormalizeForIntent(userText)}";
+
+    private string BuildTextMergeKey(string userKey, string userText)
+    {
+        var tz = ResolveTimeZone(_config["App:TimeZoneId"] ?? "Asia/Taipei");
+        var minuteBucket = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, tz).ToString("yyyyMMddHHmm");
+        return $"{userKey}:text:{NormalizeForIntent(userText)}:{minuteBucket}";
+    }
 
     /// <summary>HMAC-SHA256 簽章驗證</summary>
     private bool VerifySignature(string body, string signature)
