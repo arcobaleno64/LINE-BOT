@@ -94,6 +94,13 @@ public class LineWebhookController(
             }
 
             _logger.LogInformation("Processing text message from {UserId}: {Text}", evt.Source?.UserId, userText);
+
+            if (TryBuildDateTimeReply(userText, out var dateTimeReply))
+            {
+                await _reply.ReplyTextAsync(evt.ReplyToken, dateTimeReply, ct);
+                return;
+            }
+
             var aiReply = await _ai.GetReplyAsync(userText, userKey, ct);
             await _reply.ReplyTextAsync(evt.ReplyToken, aiReply, ct);
             return;
@@ -202,5 +209,68 @@ public class LineWebhookController(
 
 {summary}
 """;
+    }
+
+    private bool TryBuildDateTimeReply(string text, out string reply)
+    {
+        var askTime = ContainsAny(text, "現在幾點", "現在時間", "幾點了", "目前時間", "現在幾點?");
+        var askDate = ContainsAny(text, "幾月幾號", "今天幾號", "今天日期", "今天幾月幾日", "今天是幾號");
+        var askWeekday = ContainsAny(text, "星期幾", "禮拜幾", "週幾");
+
+        if (!askTime && !askDate && !askWeekday)
+        {
+            reply = string.Empty;
+            return false;
+        }
+
+        var tz = ResolveTimeZone(_config["App:TimeZoneId"] ?? "Asia/Taipei");
+        var now = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, tz);
+        var weekday = now.DayOfWeek switch
+        {
+            DayOfWeek.Sunday => "星期日",
+            DayOfWeek.Monday => "星期一",
+            DayOfWeek.Tuesday => "星期二",
+            DayOfWeek.Wednesday => "星期三",
+            DayOfWeek.Thursday => "星期四",
+            DayOfWeek.Friday => "星期五",
+            _ => "星期六"
+        };
+
+        var lines = new List<string>();
+        if (askTime)
+            lines.Add($"現在時間：{now:HH:mm:ss}");
+        if (askDate)
+            lines.Add($"今天日期：{now:yyyy 年 MM 月 dd 日}");
+        if (askWeekday)
+            lines.Add($"今天：{weekday}");
+
+        if (!askDate && !askWeekday)
+            lines.Add($"日期：{now:yyyy 年 MM 月 dd 日}（{weekday}）");
+
+        reply = string.Join("\n", lines);
+        return true;
+    }
+
+    private static bool ContainsAny(string text, params string[] keywords)
+        => keywords.Any(k => text.Contains(k, StringComparison.OrdinalIgnoreCase));
+
+    private static TimeZoneInfo ResolveTimeZone(string preferredTimeZoneId)
+    {
+        var candidates = new[] { preferredTimeZoneId, "Asia/Taipei", "Taipei Standard Time" };
+        foreach (var id in candidates.Where(x => !string.IsNullOrWhiteSpace(x)).Distinct())
+        {
+            try
+            {
+                return TimeZoneInfo.FindSystemTimeZoneById(id);
+            }
+            catch (TimeZoneNotFoundException)
+            {
+            }
+            catch (InvalidTimeZoneException)
+            {
+            }
+        }
+
+        return TimeZoneInfo.Local;
     }
 }
