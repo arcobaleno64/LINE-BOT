@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using LineBotWebhook.Models;
 using LineBotWebhook.Services;
 using Microsoft.AspNetCore.Mvc;
@@ -25,6 +26,18 @@ public class LineWebhookController(
     private readonly LineContentService _content = content;
     private readonly GeneratedFileService _files = files;
     private readonly ILogger<LineWebhookController> _logger = logger;
+
+    private static readonly Regex TimeIntentRegex = new(
+        @"(現在|目前|當前|此刻)?(時間|幾點|幾點了|幾點鐘|幾點幾分|幾點幾分幾秒)",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    private static readonly Regex DateIntentRegex = new(
+        @"(今天|今日|明天|昨日|昨天|前天|後天)?(日期|幾月幾號|幾月幾日|幾號|年月日)",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    private static readonly Regex WeekdayIntentRegex = new(
+        @"(今天|今日|明天|昨日|昨天|前天|後天)?(星期|禮拜|週)(幾|一|二|三|四|五|六|日|天)?",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
 
     /// <summary>LINE Messaging API Webhook Endpoint</summary>
@@ -213,9 +226,18 @@ public class LineWebhookController(
 
     private bool TryBuildDateTimeReply(string text, out string reply)
     {
-        var askTime = ContainsAny(text, "現在幾點", "現在時間", "幾點了", "目前時間", "現在幾點?");
-        var askDate = ContainsAny(text, "幾月幾號", "今天幾號", "今天日期", "今天幾月幾日", "今天是幾號");
-        var askWeekday = ContainsAny(text, "星期幾", "禮拜幾", "週幾");
+        var normalized = NormalizeForIntent(text);
+        var askTime = TimeIntentRegex.IsMatch(normalized);
+        var askDate = DateIntentRegex.IsMatch(normalized);
+        var askWeekday = WeekdayIntentRegex.IsMatch(normalized);
+
+        // 常見簡短問法補強
+        if (!askTime && ContainsAny(normalized, "幾點", "時間"))
+            askTime = true;
+        if (!askDate && ContainsAny(normalized, "幾號", "幾月幾號", "日期"))
+            askDate = true;
+        if (!askWeekday && ContainsAny(normalized, "星期幾", "禮拜幾", "週幾"))
+            askWeekday = true;
 
         if (!askTime && !askDate && !askWeekday)
         {
@@ -225,7 +247,9 @@ public class LineWebhookController(
 
         var tz = ResolveTimeZone(_config["App:TimeZoneId"] ?? "Asia/Taipei");
         var now = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, tz);
-        var weekday = now.DayOfWeek switch
+        var dayOffset = DetectDayOffset(normalized);
+        var target = now.Date.AddDays(dayOffset);
+        var weekday = target.DayOfWeek switch
         {
             DayOfWeek.Sunday => "星期日",
             DayOfWeek.Monday => "星期一",
@@ -236,16 +260,26 @@ public class LineWebhookController(
             _ => "星期六"
         };
 
+        var dayLabel = dayOffset switch
+        {
+            -2 => "前天",
+            -1 => "昨天",
+            0 => "今天",
+            1 => "明天",
+            2 => "後天",
+            _ => "該日"
+        };
+
         var lines = new List<string>();
         if (askTime)
             lines.Add($"現在時間：{now:HH:mm:ss}");
         if (askDate)
-            lines.Add($"今天日期：{now:yyyy 年 MM 月 dd 日}");
+            lines.Add($"{dayLabel}日期：{target:yyyy 年 MM 月 dd 日}");
         if (askWeekday)
-            lines.Add($"今天：{weekday}");
+            lines.Add($"{dayLabel}：{weekday}");
 
         if (!askDate && !askWeekday)
-            lines.Add($"日期：{now:yyyy 年 MM 月 dd 日}（{weekday}）");
+            lines.Add($"日期：{target:yyyy 年 MM 月 dd 日}（{weekday}）");
 
         reply = string.Join("\n", lines);
         return true;
@@ -253,6 +287,35 @@ public class LineWebhookController(
 
     private static bool ContainsAny(string text, params string[] keywords)
         => keywords.Any(k => text.Contains(k, StringComparison.OrdinalIgnoreCase));
+
+    private static string NormalizeForIntent(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return string.Empty;
+
+        var normalized = text.Trim().ToLowerInvariant();
+        normalized = normalized
+            .Replace("？", "")
+            .Replace("?", "")
+            .Replace("，", "")
+            .Replace(",", "")
+            .Replace("。", "")
+            .Replace("！", "")
+            .Replace("!", "")
+            .Replace(" ", "")
+            .Replace("\t", "")
+            .Replace("\n", "");
+        return normalized;
+    }
+
+    private static int DetectDayOffset(string normalizedText)
+    {
+        if (ContainsAny(normalizedText, "前天")) return -2;
+        if (ContainsAny(normalizedText, "昨天", "昨日")) return -1;
+        if (ContainsAny(normalizedText, "明天")) return 1;
+        if (ContainsAny(normalizedText, "後天")) return 2;
+        return 0;
+    }
 
     private static TimeZoneInfo ResolveTimeZone(string preferredTimeZoneId)
     {
