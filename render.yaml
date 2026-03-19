@@ -22,6 +22,8 @@ services:
         value: Gemini
       - key: Ai__Gemini__ApiKey
         sync: false
+      - key: Ai__Gemini__SecondaryApiKey
+        sync: false
       - key: Ai__Gemini__Model
         value: gemini-2.5-flash
       - key: Ai__Gemini__Endpoint

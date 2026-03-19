@@ -14,7 +14,6 @@ FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 WORKDIR /app
 COPY --from=build /app/publish .
 
-ENV ASPNETCORE_URLS=http://+:10000
 EXPOSE 10000
 
-ENTRYPOINT ["dotnet", "LineBotWebhook.dll"]
+ENTRYPOINT ["/bin/sh", "-c", "ASPNETCORE_URLS=http://0.0.0.0:${PORT:-10000} exec dotnet LineBotWebhook.dll"]
