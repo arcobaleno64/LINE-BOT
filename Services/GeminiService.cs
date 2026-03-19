@@ -1,3 +1,4 @@
+using System.Net;
 using System.Text;
 using System.Text.Json;
 
@@ -10,18 +11,22 @@ public class GeminiService : IAiService
     private readonly HttpClient _http;
     private readonly string _apiKey;
     private readonly string _model;
+    private readonly string _fallbackModel;
     private readonly string _endpoint;
     private readonly int _maxOutputTokens;
     private readonly ConversationHistoryService _history;
+    private readonly ILogger<GeminiService> _logger;
 
-    public GeminiService(HttpClient http, IConfiguration config, ConversationHistoryService history)
+    public GeminiService(HttpClient http, IConfiguration config, ConversationHistoryService history, ILogger<GeminiService> logger)
     {
         _http = http;
         _apiKey = config["Ai:Gemini:ApiKey"] ?? throw new InvalidOperationException("Missing Ai:Gemini:ApiKey");
         _model = config["Ai:Gemini:Model"] ?? "gemini-2.5-flash";
+        _fallbackModel = config["Ai:Gemini:FallbackModel"] ?? "gemini-2.0-flash-lite";
         _endpoint = config["Ai:Gemini:Endpoint"] ?? "https://generativelanguage.googleapis.com/v1beta/models";
         _maxOutputTokens = int.TryParse(config["Ai:MaxOutputTokens"], out var parsed) ? parsed : 4096;
         _history = history;
+        _logger = logger;
     }
 
     public async Task<string> GetReplyAsync(string userMessage, string userKey, CancellationToken ct = default)
@@ -121,38 +126,53 @@ MIME：{mimeType}
 
     private async Task<string> SendWithRetryAsync(object payload, CancellationToken ct)
     {
-        var url = $"{_endpoint.TrimEnd('/')}/{_model}:generateContent?key={_apiKey}";
-        var body = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+        var response = await SendGenerateAsync(_model, payload, ct);
 
-        var request = new HttpRequestMessage(HttpMethod.Post, url) { Content = body };
-        var response = await _http.SendAsync(request, ct);
+        if (response.StatusCode == HttpStatusCode.TooManyRequests &&
+            !string.Equals(_model, _fallbackModel, StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogWarning("Gemini primary model {PrimaryModel} hit 429, trying fallback model {FallbackModel}", _model, _fallbackModel);
+            response.Dispose();
+            response = await SendGenerateAsync(_fallbackModel, payload, ct);
+        }
 
         // 429 立刻拋出，由 controller 層的 Ai429BackoffService 統一處理冷卻與友善回覆
         // 不在此層重試，避免多 webhook 同時 retry 放大 429 風暴
-        response.EnsureSuccessStatusCode();
-
-        using var doc = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
-        var candidate = doc.RootElement.GetProperty("candidates")[0];
-
-        var parts = candidate.GetProperty("content").GetProperty("parts");
-        var sb = new StringBuilder();
-        foreach (var part in parts.EnumerateArray())
+        using (response)
         {
-            if (part.TryGetProperty("text", out var textPart))
-                sb.Append(textPart.GetString());
+            response.EnsureSuccessStatusCode();
+
+            using var doc = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
+            var candidate = doc.RootElement.GetProperty("candidates")[0];
+
+            var parts = candidate.GetProperty("content").GetProperty("parts");
+            var sb = new StringBuilder();
+            foreach (var part in parts.EnumerateArray())
+            {
+                if (part.TryGetProperty("text", out var textPart))
+                    sb.Append(textPart.GetString());
+            }
+
+            var text = sb.ToString().Trim();
+            if (string.IsNullOrWhiteSpace(text))
+                return "(AI 無回應)";
+
+            if (candidate.TryGetProperty("finishReason", out var reason) &&
+                reason.GetString() == "MAX_TOKENS")
+            {
+                text += "\n\n⚠️ 回答已達字數上限，如需後續請繼續提問。";
+            }
+
+            return text;
         }
+    }
 
-        var text = sb.ToString().Trim();
-        if (string.IsNullOrWhiteSpace(text))
-            return "(AI 無回應)";
-
-        if (candidate.TryGetProperty("finishReason", out var reason) &&
-            reason.GetString() == "MAX_TOKENS")
-        {
-            text += "\n\n⚠️ 回答已達字數上限，如需後續請繼續提問。";
-        }
-
-        return text;
+    private Task<HttpResponseMessage> SendGenerateAsync(string model, object payload, CancellationToken ct)
+    {
+        var url = $"{_endpoint.TrimEnd('/')}/{model}:generateContent?key={_apiKey}";
+        var body = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+        var request = new HttpRequestMessage(HttpMethod.Post, url) { Content = body };
+        return _http.SendAsync(request, ct);
     }
 }
 

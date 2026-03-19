@@ -17,7 +17,8 @@ switch (provider)
             new GeminiService(
                 sp.GetRequiredService<IHttpClientFactory>().CreateClient(),
                 sp.GetRequiredService<IConfiguration>(),
-                sp.GetRequiredService<ConversationHistoryService>()));
+                sp.GetRequiredService<ConversationHistoryService>(),
+                sp.GetRequiredService<ILogger<GeminiService>>()));
         break;
 
     case "Claude":
