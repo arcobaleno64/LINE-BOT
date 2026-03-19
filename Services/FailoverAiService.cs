@@ -100,7 +100,7 @@ public class FailoverAiService : IAiService
     {
         if (name.Equals("Gemini", StringComparison.OrdinalIgnoreCase))
         {
-            if (string.IsNullOrWhiteSpace(config["Ai:Gemini:ApiKey"]))
+            if (AiConfigurationHelpers.GetConfiguredValues(config, "Ai:Gemini:ApiKey", "Ai:Gemini:SecondaryApiKey").Count == 0)
                 return null;
 
             return new ProviderEntry("Gemini", new GeminiService(httpClientFactory.CreateClient(), config, history));
@@ -108,7 +108,7 @@ public class FailoverAiService : IAiService
 
         if (name.Equals("OpenAI", StringComparison.OrdinalIgnoreCase))
         {
-            if (string.IsNullOrWhiteSpace(config["Ai:OpenAI:ApiKey"]))
+            if (AiConfigurationHelpers.GetConfiguredValue(config, "Ai:OpenAI:ApiKey") is null)
                 return null;
 
             return new ProviderEntry("OpenAI", new OpenAiService(httpClientFactory.CreateClient(), config, history));
@@ -116,7 +116,7 @@ public class FailoverAiService : IAiService
 
         if (name.Equals("Claude", StringComparison.OrdinalIgnoreCase))
         {
-            if (string.IsNullOrWhiteSpace(config["Ai:Claude:ApiKey"]))
+            if (AiConfigurationHelpers.GetConfiguredValue(config, "Ai:Claude:ApiKey") is null)
                 return null;
 
             return new ProviderEntry("Claude", new ClaudeService(httpClientFactory.CreateClient(), config, history));

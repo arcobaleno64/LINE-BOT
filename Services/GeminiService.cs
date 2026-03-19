@@ -9,7 +9,7 @@ public class GeminiService : IAiService
     private const string ButlerPrompt = "你是一位親切的管家，語氣溫暖有禮、回答精簡實用，必要時可條列重點。請全程使用繁體中文，並避免自稱是 AI。";
 
     private readonly HttpClient _http;
-    private readonly string _apiKey;
+    private readonly IReadOnlyList<string> _apiKeys;
     private readonly string _model;
     private readonly string _fallbackModel;
     private readonly string _endpoint;
@@ -19,7 +19,10 @@ public class GeminiService : IAiService
     public GeminiService(HttpClient http, IConfiguration config, ConversationHistoryService history)
     {
         _http = http;
-        _apiKey = config["Ai:Gemini:ApiKey"] ?? throw new InvalidOperationException("Missing Ai:Gemini:ApiKey");
+        _apiKeys = AiConfigurationHelpers.GetConfiguredValues(config, "Ai:Gemini:ApiKey", "Ai:Gemini:SecondaryApiKey");
+        if (_apiKeys.Count == 0)
+            throw new InvalidOperationException("Missing Ai:Gemini:ApiKey");
+
         _model = config["Ai:Gemini:Model"] ?? "gemini-2.5-flash";
         _fallbackModel = config["Ai:Gemini:FallbackModel"] ?? "gemini-2.0-flash-lite";
         _endpoint = config["Ai:Gemini:Endpoint"] ?? "https://generativelanguage.googleapis.com/v1beta/models";
@@ -124,56 +127,72 @@ MIME：{mimeType}
 
     private async Task<string> SendWithRetryAsync(object payload, CancellationToken ct)
     {
-        var response = await SendGenerateAsync(_model, payload, ct);
+        HttpRequestException? lastException = null;
+
+        foreach (var apiKey in _apiKeys)
+        {
+            using var response = await SendBestEffortGenerateAsync(apiKey, payload, ct);
+
+            if (response.IsSuccessStatusCode)
+            {
+                using var doc = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
+                var candidate = doc.RootElement.GetProperty("candidates")[0];
+
+                var parts = candidate.GetProperty("content").GetProperty("parts");
+                var sb = new StringBuilder();
+                foreach (var part in parts.EnumerateArray())
+                {
+                    if (part.TryGetProperty("text", out var textPart))
+                        sb.Append(textPart.GetString());
+                }
+
+                var text = sb.ToString().Trim();
+                if (string.IsNullOrWhiteSpace(text))
+                    return "(AI 無回應)";
+
+                if (candidate.TryGetProperty("finishReason", out var reason) &&
+                    reason.GetString() == "MAX_TOKENS")
+                {
+                    text += "\n\n⚠️ 回答已達字數上限，如需後續請繼續提問。";
+                }
+
+                return text;
+            }
+
+            var errorBody = await response.Content.ReadAsStringAsync(ct);
+            lastException = new HttpRequestException(
+                $"Gemini API error {(int)response.StatusCode}: {errorBody}",
+                null,
+                response.StatusCode);
+
+            if (!ShouldTryNextApiKey(response.StatusCode))
+                throw lastException;
+        }
+
+        throw lastException ?? new InvalidOperationException("Gemini API call failed without a captured exception.");
+    }
+
+    private async Task<HttpResponseMessage> SendBestEffortGenerateAsync(string apiKey, object payload, CancellationToken ct)
+    {
+        var response = await SendGenerateAsync(_model, apiKey, payload, ct);
 
         if (response.StatusCode == HttpStatusCode.TooManyRequests &&
             !string.Equals(_model, _fallbackModel, StringComparison.OrdinalIgnoreCase))
         {
             response.Dispose();
-            response = await SendGenerateAsync(_fallbackModel, payload, ct);
+            response = await SendGenerateAsync(_fallbackModel, apiKey, payload, ct);
         }
 
-        // 429 立刻拋出，由 controller 層的 Ai429BackoffService 統一處理冷卻與友善回覆
-        // 不在此層重試，避免多 webhook 同時 retry 放大 429 風暴
-        using (response)
-        {
-            if (!response.IsSuccessStatusCode)
-            {
-                var errorBody = await response.Content.ReadAsStringAsync(ct);
-                throw new HttpRequestException(
-                    $"Gemini API error {(int)response.StatusCode}: {errorBody}",
-                    null,
-                    response.StatusCode);
-            }
-
-            using var doc = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
-            var candidate = doc.RootElement.GetProperty("candidates")[0];
-
-            var parts = candidate.GetProperty("content").GetProperty("parts");
-            var sb = new StringBuilder();
-            foreach (var part in parts.EnumerateArray())
-            {
-                if (part.TryGetProperty("text", out var textPart))
-                    sb.Append(textPart.GetString());
-            }
-
-            var text = sb.ToString().Trim();
-            if (string.IsNullOrWhiteSpace(text))
-                return "(AI 無回應)";
-
-            if (candidate.TryGetProperty("finishReason", out var reason) &&
-                reason.GetString() == "MAX_TOKENS")
-            {
-                text += "\n\n⚠️ 回答已達字數上限，如需後續請繼續提問。";
-            }
-
-            return text;
-        }
+        return response;
     }
 
-    private Task<HttpResponseMessage> SendGenerateAsync(string model, object payload, CancellationToken ct)
+    private static bool ShouldTryNextApiKey(HttpStatusCode statusCode)
+        => statusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden or HttpStatusCode.TooManyRequests
+            || (int)statusCode is >= 500 and <= 599;
+
+    private Task<HttpResponseMessage> SendGenerateAsync(string model, string apiKey, object payload, CancellationToken ct)
     {
-        var url = $"{_endpoint.TrimEnd('/')}/{model}:generateContent?key={_apiKey}";
+        var url = $"{_endpoint.TrimEnd('/')}/{model}:generateContent?key={apiKey}";
         var body = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
         var request = new HttpRequestMessage(HttpMethod.Post, url) { Content = body };
         return _http.SendAsync(request, ct);
