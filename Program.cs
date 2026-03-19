@@ -8,35 +8,13 @@ builder.Services.AddHttpClient();
 // ---------- DI: Conversation History ----------
 builder.Services.AddSingleton(new ConversationHistoryService(maxRounds: 15, idleMinutes: -1));
 
-// ---------- DI: AI Service (依設定切換 Provider) ----------
-var provider = builder.Configuration["Ai:Provider"] ?? "OpenAI";
-switch (provider)
-{
-    case "Gemini":
-        builder.Services.AddSingleton<IAiService>(sp =>
-            new GeminiService(
-                sp.GetRequiredService<IHttpClientFactory>().CreateClient(),
-                sp.GetRequiredService<IConfiguration>(),
-                sp.GetRequiredService<ConversationHistoryService>()));
-        break;
-
-    case "Claude":
-        builder.Services.AddSingleton<IAiService>(sp =>
-            new ClaudeService(
-                sp.GetRequiredService<IHttpClientFactory>().CreateClient(),
-                sp.GetRequiredService<IConfiguration>(),
-                sp.GetRequiredService<ConversationHistoryService>()));
-        break;
-
-    case "OpenAI":
-    default:
-        builder.Services.AddSingleton<IAiService>(sp =>
-            new OpenAiService(
-                sp.GetRequiredService<IHttpClientFactory>().CreateClient(),
-                sp.GetRequiredService<IConfiguration>(),
-                sp.GetRequiredService<ConversationHistoryService>()));
-        break;
-}
+// ---------- DI: AI Service (主 provider + 自動 failover) ----------
+builder.Services.AddSingleton<IAiService>(sp =>
+    new FailoverAiService(
+        sp.GetRequiredService<IHttpClientFactory>(),
+        sp.GetRequiredService<IConfiguration>(),
+        sp.GetRequiredService<ConversationHistoryService>(),
+        sp.GetRequiredService<ILogger<FailoverAiService>>()));
 
 // ---------- DI: LINE Reply Service ----------
 builder.Services.AddSingleton<LineReplyService>(sp =>

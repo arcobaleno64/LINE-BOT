@@ -294,7 +294,7 @@ public class LineWebhookController(
         }
 
         var mergeKey = BuildTextMergeKey(userKey, userText);
-        return await _inFlightMerge.RunAsync(mergeKey, async () =>
+        var mergeExecution = _inFlightMerge.JoinOrRun(mergeKey, async () =>
         {
             if (_aiCache.TryGet(cacheKey, out var hotCachedReply))
                 return hotCachedReply;
@@ -327,6 +327,11 @@ public class LineWebhookController(
                 return "目前流量較高，稍後再試。";
             }
         });
+
+        if (mergeExecution.JoinedExisting)
+            _logger.LogInformation("Merged duplicate text request into existing in-flight call. Key: {MergeKey}", mergeKey);
+
+        return await mergeExecution.Task;
     }
 
     private bool TryThrottle(string userKey, string messageType, out int retryAfter)
@@ -392,8 +397,10 @@ public class LineWebhookController(
     private string BuildTextMergeKey(string userKey, string userText)
     {
         var tz = ResolveTimeZone(_config["App:TimeZoneId"] ?? "Asia/Taipei");
-        var minuteBucket = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, tz).ToString("yyyyMMddHHmm");
-        return $"{userKey}:text:{NormalizeForIntent(userText)}:{minuteBucket}";
+        var windowSeconds = GetIntConfig("App:AiMergeWindowSeconds", 60);
+        var now = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, tz);
+        var bucket = now.Ticks / TimeSpan.FromSeconds(windowSeconds).Ticks;
+        return $"{userKey}:text:{NormalizeForIntent(userText)}:{bucket}";
     }
 
     /// <summary>HMAC-SHA256 簽章驗證</summary>
@@ -518,6 +525,14 @@ public class LineWebhookController(
             .Replace("，", "")
             .Replace(",", "")
             .Replace("。", "")
+            .Replace("：", "")
+            .Replace(":", "")
+            .Replace("；", "")
+            .Replace(";", "")
+            .Replace("（", "")
+            .Replace("）", "")
+            .Replace("(", "")
+            .Replace(")", "")
             .Replace("！", "")
             .Replace("!", "")
             .Replace(" ", "")
