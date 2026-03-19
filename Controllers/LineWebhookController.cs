@@ -16,6 +16,7 @@ public class LineWebhookController(
     LineReplyService reply,
     LineContentService content,
     GeneratedFileService files,
+    WebSearchService webSearch,
     ILogger<LineWebhookController> logger) : ControllerBase
 {
     private readonly IConfiguration _config = config;
@@ -25,6 +26,7 @@ public class LineWebhookController(
     private readonly LineReplyService _reply = reply;
     private readonly LineContentService _content = content;
     private readonly GeneratedFileService _files = files;
+    private readonly WebSearchService _webSearch = webSearch;
     private readonly ILogger<LineWebhookController> _logger = logger;
 
     private static readonly Regex TimeIntentRegex = new(
@@ -111,6 +113,38 @@ public class LineWebhookController(
             if (TryBuildDateTimeReply(userText, out var dateTimeReply))
             {
                 await _reply.ReplyTextAsync(evt.ReplyToken, dateTimeReply, ct);
+                return;
+            }
+
+            var searchOutcome = await _webSearch.TrySearchAsync(userText, ct);
+            if (searchOutcome.Triggered)
+            {
+                if (!searchOutcome.Succeeded)
+                {
+                    await _reply.ReplyTextAsync(evt.ReplyToken, searchOutcome.Message, ct);
+                    return;
+                }
+
+                var prompt = $"""
+你將收到使用者問題與網路搜尋摘要。
+請綜合來源整理成精簡、實用的繁體中文回答。
+若來源彼此衝突，請清楚說明不一致處。
+
+使用者問題：{userText}
+
+{searchOutcome.ContextForAi}
+""";
+
+                var webAiReply = await _ai.GetReplyAsync(prompt, userKey, ct);
+                var sourceList = WebSearchService.BuildSourceList(searchOutcome.Sources);
+                var finalReply = $"""
+{webAiReply}
+
+參考來源：
+{sourceList}
+""";
+
+                await _reply.ReplyTextAsync(evt.ReplyToken, finalReply, ct);
                 return;
             }
 

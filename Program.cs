@@ -51,6 +51,10 @@ builder.Services.AddSingleton<LineContentService>(sp =>
         sp.GetRequiredService<IConfiguration>()));
 
 builder.Services.AddSingleton<GeneratedFileService>();
+builder.Services.AddSingleton<WebSearchService>(sp =>
+    new WebSearchService(
+        sp.GetRequiredService<IHttpClientFactory>().CreateClient(),
+        sp.GetRequiredService<IConfiguration>()));
 
 // ---------- MVC Controllers ----------
 builder.Services.AddControllers();

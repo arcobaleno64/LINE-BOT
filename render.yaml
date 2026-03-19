@@ -22,3 +22,5 @@ services:
         value: gemini-2.5-flash
       - key: Ai__Gemini__Endpoint
         value: https://generativelanguage.googleapis.com/v1beta/models
+      - key: WebSearch__TavilyApiKey
+        sync: false
