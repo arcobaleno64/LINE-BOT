@@ -10,6 +10,10 @@ services:
     envVars:
       - key: ASPNETCORE_ENVIRONMENT
         value: Production
+      - key: DOTNET_HOSTBUILDER__RELOADCONFIGONCHANGE
+        value: "false"
+      - key: DOTNET_USE_POLLING_FILE_WATCHER
+        value: "1"
       - key: Line__ChannelSecret
         sync: false
       - key: Line__ChannelAccessToken
