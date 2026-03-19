@@ -1,4 +1,3 @@
-using System.Net;
 using System.Text;
 using System.Text.Json;
 
@@ -125,43 +124,35 @@ MIME：{mimeType}
         var url = $"{_endpoint.TrimEnd('/')}/{_model}:generateContent?key={_apiKey}";
         var body = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
 
-        int[] retryDelaysMs = [2000, 5000, 10000];
-        for (int attempt = 0; ; attempt++)
+        var request = new HttpRequestMessage(HttpMethod.Post, url) { Content = body };
+        var response = await _http.SendAsync(request, ct);
+
+        // 429 立刻拋出，由 controller 層的 Ai429BackoffService 統一處理冷卻與友善回覆
+        // 不在此層重試，避免多 webhook 同時 retry 放大 429 風暴
+        response.EnsureSuccessStatusCode();
+
+        using var doc = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
+        var candidate = doc.RootElement.GetProperty("candidates")[0];
+
+        var parts = candidate.GetProperty("content").GetProperty("parts");
+        var sb = new StringBuilder();
+        foreach (var part in parts.EnumerateArray())
         {
-            var request = new HttpRequestMessage(HttpMethod.Post, url) { Content = body };
-            var response = await _http.SendAsync(request, ct);
-
-            if (response.StatusCode == HttpStatusCode.TooManyRequests && attempt < retryDelaysMs.Length)
-            {
-                await Task.Delay(retryDelaysMs[attempt], ct);
-                body = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
-                continue;
-            }
-
-            response.EnsureSuccessStatusCode();
-
-            using var doc = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
-            var candidate = doc.RootElement.GetProperty("candidates")[0];
-
-            var parts = candidate.GetProperty("content").GetProperty("parts");
-            var sb = new StringBuilder();
-            foreach (var part in parts.EnumerateArray())
-            {
-                if (part.TryGetProperty("text", out var textPart))
-                    sb.Append(textPart.GetString());
-            }
-
-            var text = sb.ToString().Trim();
-            if (string.IsNullOrWhiteSpace(text))
-                return "(AI 無回應)";
-
-            if (candidate.TryGetProperty("finishReason", out var reason) &&
-                reason.GetString() == "MAX_TOKENS")
-            {
-                text += "\n\n⚠️ 回答已達字數上限，如需後續請繼續提問。";
-            }
-
-            return text;
+            if (part.TryGetProperty("text", out var textPart))
+                sb.Append(textPart.GetString());
         }
+
+        var text = sb.ToString().Trim();
+        if (string.IsNullOrWhiteSpace(text))
+            return "(AI 無回應)";
+
+        if (candidate.TryGetProperty("finishReason", out var reason) &&
+            reason.GetString() == "MAX_TOKENS")
+        {
+            text += "\n\n⚠️ 回答已達字數上限，如需後續請繼續提問。";
+        }
+
+        return text;
     }
 }
+
