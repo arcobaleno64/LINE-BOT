@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -17,6 +18,7 @@ public class LineWebhookController(
     LineContentService content,
     GeneratedFileService files,
     WebSearchService webSearch,
+    UserRequestThrottleService throttle,
     ILogger<LineWebhookController> logger) : ControllerBase
 {
     private readonly IConfiguration _config = config;
@@ -27,6 +29,7 @@ public class LineWebhookController(
     private readonly LineContentService _content = content;
     private readonly GeneratedFileService _files = files;
     private readonly WebSearchService _webSearch = webSearch;
+    private readonly UserRequestThrottleService _throttle = throttle;
     private readonly ILogger<LineWebhookController> _logger = logger;
 
     private static readonly Regex TimeIntentRegex = new(
@@ -96,6 +99,15 @@ public class LineWebhookController(
         var userId = evt.Source?.UserId ?? "unknown";
         var userKey = $"{sourceId}:{userId}";
 
+        if (evt.Message.Type is "text" or "image" or "file")
+        {
+            if (!_throttle.TryAcquire(userKey, out var retryAfter))
+            {
+                await _reply.ReplyTextAsync(evt.ReplyToken, $"訊息有點密集，請在 {retryAfter} 秒後再試。", ct);
+                return;
+            }
+        }
+
         if (evt.Message.Type == "text")
         {
             if (!MentionGateService.ShouldHandle(evt))
@@ -135,7 +147,10 @@ public class LineWebhookController(
 {searchOutcome.ContextForAi}
 """;
 
-                var webAiReply = await _ai.GetReplyAsync(prompt, userKey, ct);
+                var webAiReply = await TryGetAiReplyAsync(() => _ai.GetReplyAsync(prompt, userKey, ct), evt.ReplyToken, ct);
+                if (webAiReply is null)
+                    return;
+
                 var sourceList = WebSearchService.BuildSourceList(searchOutcome.Sources);
                 var finalReply = $"""
 {webAiReply}
@@ -148,7 +163,10 @@ public class LineWebhookController(
                 return;
             }
 
-            var aiReply = await _ai.GetReplyAsync(userText, userKey, ct);
+            var aiReply = await TryGetAiReplyAsync(() => _ai.GetReplyAsync(userText, userKey, ct), evt.ReplyToken, ct);
+            if (aiReply is null)
+                return;
+
             await _reply.ReplyTextAsync(evt.ReplyToken, aiReply, ct);
             return;
         }
@@ -160,7 +178,13 @@ public class LineWebhookController(
 
             _logger.LogInformation("Processing image message from {UserId}", evt.Source?.UserId);
             var (bytes, mimeType) = await _content.DownloadMessageContentAsync(evt.Message.Id, ct);
-            var aiReply = await _ai.GetReplyFromImageAsync(bytes, mimeType, "請幫我分析這張圖片重點。", userKey, ct);
+            var aiReply = await TryGetAiReplyAsync(
+                () => _ai.GetReplyFromImageAsync(bytes, mimeType, "請幫我分析這張圖片重點。", userKey, ct),
+                evt.ReplyToken,
+                ct);
+            if (aiReply is null)
+                return;
+
             await _reply.ReplyTextAsync(evt.ReplyToken, aiReply, ct);
             return;
         }
@@ -185,7 +209,13 @@ public class LineWebhookController(
                 return;
             }
 
-            var aiReply = await _ai.GetReplyFromDocumentAsync(fileName, mimeType, extractedText, "請幫我整理重點、關鍵結論與待辦事項。", userKey, ct);
+            var aiReply = await TryGetAiReplyAsync(
+                () => _ai.GetReplyFromDocumentAsync(fileName, mimeType, extractedText, "請幫我整理重點、關鍵結論與待辦事項。", userKey, ct),
+                evt.ReplyToken,
+                ct);
+            if (aiReply is null)
+                return;
+
             var downloadToken = _files.SaveTextFile(
                 Path.GetFileNameWithoutExtension(fileName) + "-整理摘要.md",
                 BuildSummaryFileContent(fileName, mimeType, aiReply));
@@ -210,6 +240,28 @@ public class LineWebhookController(
         {
             await _reply.ReplyTextAsync(evt.ReplyToken, "目前我支援文字、圖片與檔案（txt/md/csv/json/xml/log/pdf）。PDF 目前先支援文字型 PDF。", ct);
         }
+    }
+
+    private async Task<string?> TryGetAiReplyAsync(Func<Task<string>> aiCall, string replyToken, CancellationToken ct)
+    {
+        try
+        {
+            return await aiCall();
+        }
+        catch (Exception ex) when (IsTooManyRequests(ex))
+        {
+            _logger.LogWarning(ex, "AI provider returned 429 Too Many Requests");
+            await _reply.ReplyTextAsync(replyToken, "目前流量較高，稍後再試。", ct);
+            return null;
+        }
+    }
+
+    private static bool IsTooManyRequests(Exception ex)
+    {
+        if (ex is HttpRequestException httpEx && httpEx.StatusCode == HttpStatusCode.TooManyRequests)
+            return true;
+
+        return ex.InnerException is not null && IsTooManyRequests(ex.InnerException);
     }
 
     /// <summary>HMAC-SHA256 簽章驗證</summary>
