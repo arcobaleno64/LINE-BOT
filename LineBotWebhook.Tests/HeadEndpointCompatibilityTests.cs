@@ -1,6 +1,7 @@
 using System.Net;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Configuration;
 
 namespace LineBotWebhook.Tests;
 
@@ -55,6 +56,15 @@ public class HeadEndpointCompatibilityTests : IClassFixture<HeadEndpointCompatib
         protected override void ConfigureWebHost(Microsoft.AspNetCore.Hosting.IWebHostBuilder builder)
         {
             builder.UseEnvironment("Production");
+            builder.ConfigureAppConfiguration((context, configBuilder) =>
+            {
+                configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["Line:ChannelAccessToken"] = "test-token",
+                    ["Line:ChannelSecret"] = "test-secret",
+                    ["Ai:OpenAI:ApiKey"] = "test-openai-key"
+                });
+            });
         }
     }
 }

@@ -59,20 +59,59 @@ internal sealed class FakeAiService : IAiService
 internal sealed class FakeDispatcher : ILineWebhookDispatcher
 {
     private readonly TaskCompletionSource<bool> _firstDispatchTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly List<(LineEvent Event, string PublicBaseUrl)> _dispatches = [];
 
     public int DispatchCalls { get; private set; }
+    public IReadOnlyList<(LineEvent Event, string PublicBaseUrl)> Dispatches => _dispatches;
+    public Func<LineEvent, string, CancellationToken, Task>? OnDispatchAsync { get; set; }
 
-    public Task DispatchAsync(LineEvent evt, string publicBaseUrl, CancellationToken ct)
+    public async Task DispatchAsync(LineEvent evt, string publicBaseUrl, CancellationToken ct)
     {
         DispatchCalls++;
+        _dispatches.Add((evt, publicBaseUrl));
         _firstDispatchTcs.TrySetResult(true);
-        return Task.CompletedTask;
+        if (OnDispatchAsync is not null)
+            await OnDispatchAsync(evt, publicBaseUrl, ct);
     }
 
     public async Task<bool> WaitForDispatchAsync(TimeSpan timeout)
     {
         var completed = await Task.WhenAny(_firstDispatchTcs.Task, Task.Delay(timeout));
         return completed == _firstDispatchTcs.Task;
+    }
+}
+
+internal sealed class FakeWebhookBackgroundQueue : IWebhookBackgroundQueue
+{
+    private readonly List<WebhookQueueItem> _items = [];
+
+    public bool TryEnqueueResult { get; set; } = true;
+    public int CompleteCalls { get; private set; }
+    public IReadOnlyList<WebhookQueueItem> Items => _items;
+
+    public bool TryEnqueue(WebhookQueueItem item)
+    {
+        if (!TryEnqueueResult)
+            return false;
+
+        _items.Add(item);
+        return true;
+    }
+
+    public async IAsyncEnumerable<WebhookQueueItem> DequeueAllAsync([System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        foreach (var item in _items)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            yield return item;
+        }
+
+        await Task.CompletedTask;
+    }
+
+    public void Complete()
+    {
+        CompleteCalls++;
     }
 }
 

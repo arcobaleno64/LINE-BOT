@@ -14,12 +14,12 @@ public class OperationalObservabilityTests
     [Fact]
     public async Task InvalidSignature_RecordsRequestAndInvalidSignatureMetrics()
     {
-        var dispatcher = new FakeDispatcher();
+        var queue = new FakeWebhookBackgroundQueue();
         var metrics = new FakeWebhookMetrics();
         var controller = new LineWebhookController(
             signatureVerifier: new AlwaysFalseSignatureVerifier(),
             publicBaseUrlResolver: new PublicBaseUrlResolver(TestFactory.BuildConfig()),
-            dispatcher: dispatcher,
+            backgroundQueue: queue,
             metrics: metrics,
             logger: NullLogger<LineWebhookController>.Instance)
         {
@@ -40,13 +40,13 @@ public class OperationalObservabilityTests
     public async Task InvalidSignature_Log_IncludesHasSignatureHeader_AndBodyLength()
     {
         const string body = "{\"destination\":\"x\",\"events\":[]}";
-        var dispatcher = new FakeDispatcher();
+        var queue = new FakeWebhookBackgroundQueue();
         var metrics = new FakeWebhookMetrics();
         var logger = new TestLogger<LineWebhookController>();
         var controller = new LineWebhookController(
             signatureVerifier: new AlwaysFalseSignatureVerifier(),
             publicBaseUrlResolver: new PublicBaseUrlResolver(TestFactory.BuildConfig()),
-            dispatcher: dispatcher,
+            backgroundQueue: queue,
             metrics: metrics,
             logger: logger)
         {
@@ -66,7 +66,7 @@ public class OperationalObservabilityTests
     [Fact]
     public async Task WebhookReceipt_Log_IncludesEventCount_AndFirstEventId_WhenAvailable()
     {
-        var dispatcher = new FakeDispatcher();
+        var queue = new FakeWebhookBackgroundQueue();
         var metrics = new FakeWebhookMetrics();
         var logger = new TestLogger<LineWebhookController>();
         var evt = BuildTextEvent("user", "hello");
@@ -74,7 +74,7 @@ public class OperationalObservabilityTests
         var controller = new LineWebhookController(
             signatureVerifier: new AlwaysTrueSignatureVerifier(),
             publicBaseUrlResolver: new PublicBaseUrlResolver(TestFactory.BuildConfig()),
-            dispatcher: dispatcher,
+            backgroundQueue: queue,
             metrics: metrics,
             logger: logger)
         {
@@ -94,13 +94,13 @@ public class OperationalObservabilityTests
     [Fact]
     public async Task WebhookReceipt_Log_ForEmptyEvents_DoesNotIncludeSummaryFields()
     {
-        var dispatcher = new FakeDispatcher();
+        var queue = new FakeWebhookBackgroundQueue();
         var metrics = new FakeWebhookMetrics();
         var logger = new TestLogger<LineWebhookController>();
         var controller = new LineWebhookController(
             signatureVerifier: new AlwaysTrueSignatureVerifier(),
             publicBaseUrlResolver: new PublicBaseUrlResolver(TestFactory.BuildConfig()),
-            dispatcher: dispatcher,
+            backgroundQueue: queue,
             metrics: metrics,
             logger: logger)
         {
@@ -120,7 +120,7 @@ public class OperationalObservabilityTests
     [Fact]
     public async Task WebhookReceipt_Log_OmitsFirstEventId_WhenFirstEventIdIsMissing()
     {
-        var dispatcher = new FakeDispatcher();
+        var queue = new FakeWebhookBackgroundQueue();
         var metrics = new FakeWebhookMetrics();
         var logger = new TestLogger<LineWebhookController>();
         var evt = BuildTextEvent("user", "hello");
@@ -128,7 +128,7 @@ public class OperationalObservabilityTests
         var controller = new LineWebhookController(
             signatureVerifier: new AlwaysTrueSignatureVerifier(),
             publicBaseUrlResolver: new PublicBaseUrlResolver(TestFactory.BuildConfig()),
-            dispatcher: dispatcher,
+            backgroundQueue: queue,
             metrics: metrics,
             logger: logger)
         {

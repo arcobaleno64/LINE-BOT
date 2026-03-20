@@ -51,6 +51,8 @@ builder.Services.AddSingleton<ITextMessageHandler, TextMessageHandler>();
 builder.Services.AddSingleton<IImageMessageHandler, ImageMessageHandler>();
 builder.Services.AddSingleton<IFileMessageHandler, FileMessageHandler>();
 builder.Services.AddSingleton<ILineWebhookDispatcher, LineWebhookDispatcher>();
+builder.Services.AddSingleton<IWebhookBackgroundQueue, WebhookBackgroundQueue>();
+builder.Services.AddHostedService<WebhookBackgroundService>();
 
 builder.Services.AddSingleton<WebSearchService>(sp =>
     new WebSearchService(

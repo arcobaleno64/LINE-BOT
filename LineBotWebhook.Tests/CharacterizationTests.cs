@@ -13,12 +13,12 @@ public class CharacterizationTests
     [Fact]
     public async Task InvalidSignature_Returns401()
     {
-        var dispatcher = new FakeDispatcher();
+        var queue = new FakeWebhookBackgroundQueue();
         var metrics = new FakeWebhookMetrics();
         var controller = new LineWebhookController(
             signatureVerifier: new AlwaysFalseSignatureVerifier(),
             publicBaseUrlResolver: new PublicBaseUrlResolver(TestFactory.BuildConfig()),
-            dispatcher: dispatcher,
+            backgroundQueue: queue,
             metrics: metrics,
             logger: NullLogger<LineWebhookController>.Instance)
         {
@@ -31,18 +31,18 @@ public class CharacterizationTests
         var result = await controller.Webhook(CancellationToken.None);
 
         Assert.IsType<UnauthorizedResult>(result);
-        Assert.Equal(0, dispatcher.DispatchCalls);
+        Assert.Empty(queue.Items);
     }
 
     [Fact]
     public async Task EmptyEvents_Returns200()
     {
-        var dispatcher = new FakeDispatcher();
+        var queue = new FakeWebhookBackgroundQueue();
         var metrics = new FakeWebhookMetrics();
         var controller = new LineWebhookController(
             signatureVerifier: new AlwaysTrueSignatureVerifier(),
             publicBaseUrlResolver: new PublicBaseUrlResolver(TestFactory.BuildConfig()),
-            dispatcher: dispatcher,
+            backgroundQueue: queue,
             metrics: metrics,
             logger: NullLogger<LineWebhookController>.Instance)
         {
@@ -55,13 +55,13 @@ public class CharacterizationTests
         var result = await controller.Webhook(CancellationToken.None);
 
         Assert.IsType<OkResult>(result);
-        Assert.Equal(0, dispatcher.DispatchCalls);
+        Assert.Empty(queue.Items);
     }
 
     [Fact]
-    public async Task Webhook_ValidBody_Returns200_AndDispatchesEvent()
+    public async Task Webhook_ValidBody_Returns200_AndEnqueuesEvent()
     {
-        var dispatcher = new FakeDispatcher();
+        var queue = new FakeWebhookBackgroundQueue();
         var metrics = new FakeWebhookMetrics();
         var evt = new LineEvent
         {
@@ -74,7 +74,7 @@ public class CharacterizationTests
         var controller = new LineWebhookController(
             signatureVerifier: new AlwaysTrueSignatureVerifier(),
             publicBaseUrlResolver: new PublicBaseUrlResolver(TestFactory.BuildConfig()),
-            dispatcher: dispatcher,
+            backgroundQueue: queue,
             metrics: metrics,
             logger: NullLogger<LineWebhookController>.Instance)
         {
@@ -87,9 +87,11 @@ public class CharacterizationTests
         var result = await controller.Webhook(CancellationToken.None);
 
         Assert.IsType<OkResult>(result);
-        var dispatched = await dispatcher.WaitForDispatchAsync(TimeSpan.FromSeconds(2));
-        Assert.True(dispatched);
-        Assert.True(dispatcher.DispatchCalls >= 1);
+        var queued = Assert.Single(queue.Items);
+        Assert.Equal(evt.WebhookEventId, queued.Event.WebhookEventId);
+        Assert.Equal(evt.Message!.Type, queued.Event.Message!.Type);
+        Assert.Equal(evt.Message.Text, queued.Event.Message.Text);
+        Assert.Equal("https://unit.test", queued.PublicBaseUrl);
     }
 
     [Theory]

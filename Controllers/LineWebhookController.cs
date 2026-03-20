@@ -11,13 +11,13 @@ namespace LineBotWebhook.Controllers;
 public class LineWebhookController(
     IWebhookSignatureVerifier signatureVerifier,
     IPublicBaseUrlResolver publicBaseUrlResolver,
-    ILineWebhookDispatcher dispatcher,
+    IWebhookBackgroundQueue backgroundQueue,
     IWebhookMetrics metrics,
     ILogger<LineWebhookController> logger) : ControllerBase
 {
     private readonly IWebhookSignatureVerifier _signatureVerifier = signatureVerifier;
     private readonly IPublicBaseUrlResolver _publicBaseUrlResolver = publicBaseUrlResolver;
-    private readonly ILineWebhookDispatcher _dispatcher = dispatcher;
+    private readonly IWebhookBackgroundQueue _backgroundQueue = backgroundQueue;
     private readonly IWebhookMetrics _metrics = metrics;
     private readonly ILogger<LineWebhookController> _logger = logger;
 
@@ -63,26 +63,10 @@ public class LineWebhookController(
         }
 
         var publicBaseUrl = _publicBaseUrlResolver.Resolve(Request);
-
-        _ = Task.Run(async () =>
+        foreach (var evt in webhook.Events)
         {
-            foreach (var evt in webhook.Events)
-            {
-                try
-                {
-                    await _dispatcher.DispatchAsync(evt, publicBaseUrl, CancellationToken.None);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(
-                        ex,
-                        "Error handling event {EventId} from {SourceType} with message type {MessageType}",
-                        evt.WebhookEventId,
-                        evt.Source?.Type ?? "unknown",
-                        evt.Message?.Type ?? "none");
-                }
-            }
-        }, CancellationToken.None);
+            _backgroundQueue.TryEnqueue(new WebhookQueueItem(evt, publicBaseUrl));
+        }
 
         return Ok();
     }
