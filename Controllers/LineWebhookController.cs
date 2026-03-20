@@ -27,12 +27,17 @@ public class LineWebhookController(
     {
         using var reader = new StreamReader(Request.Body, Encoding.UTF8);
         var body = await reader.ReadToEndAsync(ct);
+        var bodyLength = Encoding.UTF8.GetByteCount(body);
         _metrics.RecordWebhookRequest();
 
-        if (!_signatureVerifier.Verify(body, Request.Headers["x-line-signature"].ToString()))
+        var signatureHeader = Request.Headers["x-line-signature"].ToString();
+        if (!_signatureVerifier.Verify(body, signatureHeader))
         {
             _metrics.RecordInvalidSignature();
-            _logger.LogWarning("Invalid LINE signature");
+            _logger.LogWarning(
+                "Invalid LINE signature. HasSignatureHeader={HasSignatureHeader} BodyLength={BodyLength}",
+                !string.IsNullOrWhiteSpace(signatureHeader),
+                bodyLength);
             return Unauthorized();
         }
 
@@ -44,10 +49,18 @@ public class LineWebhookController(
         }
 
         _metrics.RecordWebhookEvents(webhook.Events.Count);
-        _logger.LogInformation(
-            "Received LINE webhook with {EventCount} events. FirstEventId={FirstEventId}",
-            webhook.Events.Count,
-            webhook.Events[0].WebhookEventId);
+        var firstEventId = webhook.Events[0].WebhookEventId;
+        if (!string.IsNullOrWhiteSpace(firstEventId))
+        {
+            _logger.LogInformation(
+                "Received LINE webhook with {EventCount} events. FirstEventId={FirstEventId}",
+                webhook.Events.Count,
+                firstEventId);
+        }
+        else
+        {
+            _logger.LogInformation("Received LINE webhook with {EventCount} events", webhook.Events.Count);
+        }
 
         var publicBaseUrl = _publicBaseUrlResolver.Resolve(Request);
 

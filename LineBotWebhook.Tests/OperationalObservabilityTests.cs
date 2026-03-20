@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text;
 using LineBotWebhook.Controllers;
 using LineBotWebhook.Models;
 using LineBotWebhook.Services;
@@ -33,6 +34,115 @@ public class OperationalObservabilityTests
         Assert.IsType<UnauthorizedResult>(result);
         Assert.Equal(1, metrics.WebhookRequests);
         Assert.Equal(1, metrics.InvalidSignatures);
+    }
+
+    [Fact]
+    public async Task InvalidSignature_Log_IncludesHasSignatureHeader_AndBodyLength()
+    {
+        const string body = "{\"destination\":\"x\",\"events\":[]}";
+        var dispatcher = new FakeDispatcher();
+        var metrics = new FakeWebhookMetrics();
+        var logger = new TestLogger<LineWebhookController>();
+        var controller = new LineWebhookController(
+            signatureVerifier: new AlwaysFalseSignatureVerifier(),
+            publicBaseUrlResolver: new PublicBaseUrlResolver(TestFactory.BuildConfig()),
+            dispatcher: dispatcher,
+            metrics: metrics,
+            logger: logger)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestFactory.CreateHttpContext(body, "bad")
+            }
+        };
+
+        _ = await controller.Webhook(CancellationToken.None);
+
+        var warning = Assert.Single(logger.Entries, x => x.Level == LogLevel.Warning && x.Message.Contains("Invalid LINE signature", StringComparison.Ordinal));
+        Assert.Equal(true, warning.Properties["HasSignatureHeader"]);
+        Assert.Equal(Encoding.UTF8.GetByteCount(body), warning.Properties["BodyLength"]);
+    }
+
+    [Fact]
+    public async Task WebhookReceipt_Log_IncludesEventCount_AndFirstEventId_WhenAvailable()
+    {
+        var dispatcher = new FakeDispatcher();
+        var metrics = new FakeWebhookMetrics();
+        var logger = new TestLogger<LineWebhookController>();
+        var evt = BuildTextEvent("user", "hello");
+        evt.WebhookEventId = "evt-first";
+        var controller = new LineWebhookController(
+            signatureVerifier: new AlwaysTrueSignatureVerifier(),
+            publicBaseUrlResolver: new PublicBaseUrlResolver(TestFactory.BuildConfig()),
+            dispatcher: dispatcher,
+            metrics: metrics,
+            logger: logger)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestFactory.CreateHttpContext(TestFactory.BuildWebhookJson(evt))
+            }
+        };
+
+        _ = await controller.Webhook(CancellationToken.None);
+
+        var info = Assert.Single(logger.Entries, x => x.Level == LogLevel.Information && x.Message.Contains("Received LINE webhook with", StringComparison.Ordinal));
+        Assert.Equal(1, info.Properties["EventCount"]);
+        Assert.Equal("evt-first", info.Properties["FirstEventId"]);
+    }
+
+    [Fact]
+    public async Task WebhookReceipt_Log_ForEmptyEvents_DoesNotIncludeSummaryFields()
+    {
+        var dispatcher = new FakeDispatcher();
+        var metrics = new FakeWebhookMetrics();
+        var logger = new TestLogger<LineWebhookController>();
+        var controller = new LineWebhookController(
+            signatureVerifier: new AlwaysTrueSignatureVerifier(),
+            publicBaseUrlResolver: new PublicBaseUrlResolver(TestFactory.BuildConfig()),
+            dispatcher: dispatcher,
+            metrics: metrics,
+            logger: logger)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestFactory.CreateHttpContext("{\"destination\":\"x\",\"events\":[]}")
+            }
+        };
+
+        _ = await controller.Webhook(CancellationToken.None);
+
+        var info = Assert.Single(logger.Entries, x => x.Level == LogLevel.Information && x.Message.Contains("no events", StringComparison.Ordinal));
+        Assert.False(info.Properties.ContainsKey("EventCount"));
+        Assert.False(info.Properties.ContainsKey("FirstEventId"));
+    }
+
+    [Fact]
+    public async Task WebhookReceipt_Log_OmitsFirstEventId_WhenFirstEventIdIsMissing()
+    {
+        var dispatcher = new FakeDispatcher();
+        var metrics = new FakeWebhookMetrics();
+        var logger = new TestLogger<LineWebhookController>();
+        var evt = BuildTextEvent("user", "hello");
+        evt.WebhookEventId = " ";
+        var controller = new LineWebhookController(
+            signatureVerifier: new AlwaysTrueSignatureVerifier(),
+            publicBaseUrlResolver: new PublicBaseUrlResolver(TestFactory.BuildConfig()),
+            dispatcher: dispatcher,
+            metrics: metrics,
+            logger: logger)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestFactory.CreateHttpContext(TestFactory.BuildWebhookJson(evt))
+            }
+        };
+
+        _ = await controller.Webhook(CancellationToken.None);
+
+        var info = Assert.Single(logger.Entries, x => x.Level == LogLevel.Information && x.Message.Contains("Received LINE webhook with", StringComparison.Ordinal));
+        Assert.Equal(1, info.Properties["EventCount"]);
+        Assert.False(info.Properties.ContainsKey("FirstEventId"));
     }
 
     [Fact]
@@ -286,5 +396,10 @@ public class OperationalObservabilityTests
     private sealed class AlwaysFalseSignatureVerifier : IWebhookSignatureVerifier
     {
         public bool Verify(string body, string signature) => false;
+    }
+
+    private sealed class AlwaysTrueSignatureVerifier : IWebhookSignatureVerifier
+    {
+        public bool Verify(string body, string signature) => true;
     }
 }
