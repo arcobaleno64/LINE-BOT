@@ -16,6 +16,9 @@ public sealed class WebhookMetrics : IWebhookMetrics
     private readonly Counter<long> _aiQuotaExhaustedTotal;
     private readonly Counter<long> _cacheHitTotal;
     private readonly Counter<long> _mergeJoinedTotal;
+    private readonly Counter<long> _queueEnqueuedTotal;
+    private readonly Counter<long> _queueDroppedTotal;
+    private readonly Counter<long> _queueDequeuedTotal;
     private readonly Counter<long> _replySentTotal;
     private readonly Counter<long> _replyFailedTotal;
 
@@ -31,6 +34,9 @@ public sealed class WebhookMetrics : IWebhookMetrics
         _aiQuotaExhaustedTotal = _meter.CreateCounter<long>("linebot.webhook.ai_quota_exhausted.total");
         _cacheHitTotal = _meter.CreateCounter<long>("linebot.webhook.cache_hit.total");
         _mergeJoinedTotal = _meter.CreateCounter<long>("linebot.webhook.merge_joined.total");
+        _queueEnqueuedTotal = _meter.CreateCounter<long>("linebot.webhook.queue_enqueued.total");
+        _queueDroppedTotal = _meter.CreateCounter<long>("linebot.webhook.queue_dropped.total");
+        _queueDequeuedTotal = _meter.CreateCounter<long>("linebot.webhook.queue_dequeued.total");
         _replySentTotal = _meter.CreateCounter<long>("linebot.webhook.reply_sent.total");
         _replyFailedTotal = _meter.CreateCounter<long>("linebot.webhook.reply_failed.total");
     }
@@ -132,6 +138,12 @@ public sealed class WebhookMetrics : IWebhookMetrics
             _mergeJoinedTotal.Add(1, tags);
         });
     }
+
+    public void RecordQueueEnqueued() => SafeRecord(() => _queueEnqueuedTotal.Add(1));
+
+    public void RecordQueueDropped() => SafeRecord(() => _queueDroppedTotal.Add(1));
+
+    public void RecordQueueDequeued() => SafeRecord(() => _queueDequeuedTotal.Add(1));
 
     public void RecordReplySent(int messageCount)
     {

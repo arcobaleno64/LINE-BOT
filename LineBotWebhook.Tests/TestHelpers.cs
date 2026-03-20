@@ -88,13 +88,25 @@ internal sealed class FakeWebhookBackgroundQueue : IWebhookBackgroundQueue
     public bool TryEnqueueResult { get; set; } = true;
     public int CompleteCalls { get; private set; }
     public IReadOnlyList<WebhookQueueItem> Items => _items;
+    public WebhookQueueSnapshot Snapshot { get; set; } = new(0, 256, 0, 0, 0);
 
     public bool TryEnqueue(WebhookQueueItem item)
     {
         if (!TryEnqueueResult)
+        {
+            Snapshot = Snapshot with
+            {
+                TotalDropped = Snapshot.TotalDropped + 1
+            };
             return false;
+        }
 
         _items.Add(item);
+        Snapshot = Snapshot with
+        {
+            QueueDepth = Snapshot.QueueDepth + 1,
+            TotalEnqueued = Snapshot.TotalEnqueued + 1
+        };
         return true;
     }
 
@@ -103,11 +115,18 @@ internal sealed class FakeWebhookBackgroundQueue : IWebhookBackgroundQueue
         foreach (var item in _items)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            Snapshot = Snapshot with
+            {
+                QueueDepth = Math.Max(0, Snapshot.QueueDepth - 1),
+                TotalDequeued = Snapshot.TotalDequeued + 1
+            };
             yield return item;
         }
 
         await Task.CompletedTask;
     }
+
+    public WebhookQueueSnapshot GetSnapshot() => Snapshot;
 
     public void Complete()
     {
@@ -144,6 +163,9 @@ internal sealed class FakeWebhookMetrics : IWebhookMetrics
     public int AiQuotaExhausted { get; private set; }
     public int CacheHits { get; private set; }
     public int MergeJoined { get; private set; }
+    public int QueueEnqueued { get; private set; }
+    public int QueueDropped { get; private set; }
+    public int QueueDequeued { get; private set; }
     public int RepliesSent { get; private set; }
     public int RepliesFailed { get; private set; }
     public Dictionary<string, int> MessageHandledByType { get; } = new(StringComparer.OrdinalIgnoreCase);
@@ -161,6 +183,9 @@ internal sealed class FakeWebhookMetrics : IWebhookMetrics
     public void RecordAiQuotaExhausted(string handlerType) => AiQuotaExhausted++;
     public void RecordCacheHit(string handlerType) => CacheHits++;
     public void RecordMergeJoined(string handlerType) => MergeJoined++;
+    public void RecordQueueEnqueued() => QueueEnqueued++;
+    public void RecordQueueDropped() => QueueDropped++;
+    public void RecordQueueDequeued() => QueueDequeued++;
     public void RecordReplySent(int messageCount) => RepliesSent++;
     public void RecordReplyFailed(int? statusCode = null) => RepliesFailed++;
 }

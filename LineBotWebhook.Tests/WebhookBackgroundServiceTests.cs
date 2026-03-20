@@ -9,7 +9,8 @@ public class WebhookBackgroundServiceTests
     [Fact]
     public async Task Worker_ConsumesQueuedItem_AndDispatchesIt()
     {
-        var queue = new WebhookBackgroundQueue(new TestLogger<WebhookBackgroundQueue>());
+        var metrics = new FakeWebhookMetrics();
+        var queue = new WebhookBackgroundQueue(metrics, new TestLogger<WebhookBackgroundQueue>());
         var dispatcher = new FakeDispatcher();
         var logger = new TestLogger<WebhookBackgroundService>();
         using var worker = new WebhookBackgroundService(queue, dispatcher, logger);
@@ -26,12 +27,19 @@ public class WebhookBackgroundServiceTests
         Assert.True(dispatched);
         Assert.Equal(1, dispatcher.DispatchCalls);
         Assert.Equal("https://unit.test", dispatcher.Dispatches[0].PublicBaseUrl);
+        var snapshot = queue.GetSnapshot();
+        Assert.Equal(0, snapshot.QueueDepth);
+        Assert.Equal(1, snapshot.TotalEnqueued);
+        Assert.Equal(1, snapshot.TotalDequeued);
+        Assert.Equal(0, snapshot.TotalDropped);
+        Assert.Equal(1, metrics.QueueEnqueued);
+        Assert.Equal(1, metrics.QueueDequeued);
     }
 
     [Fact]
     public async Task Worker_LogsError_WhenDispatcherThrows_AndContinuesToNextItem()
     {
-        var queue = new WebhookBackgroundQueue(new TestLogger<WebhookBackgroundQueue>());
+        var queue = new WebhookBackgroundQueue(new FakeWebhookMetrics(), new TestLogger<WebhookBackgroundQueue>());
         var dispatcher = new FakeDispatcher();
         var logger = new TestLogger<WebhookBackgroundService>();
         var secondDispatch = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -67,7 +75,7 @@ public class WebhookBackgroundServiceTests
     [Fact]
     public async Task Worker_StopAsync_CompletesWithoutThrowing()
     {
-        var queue = new WebhookBackgroundQueue(new TestLogger<WebhookBackgroundQueue>());
+        var queue = new WebhookBackgroundQueue(new FakeWebhookMetrics(), new TestLogger<WebhookBackgroundQueue>());
         var dispatcher = new FakeDispatcher();
         var logger = new TestLogger<WebhookBackgroundService>();
         using var worker = new WebhookBackgroundService(queue, dispatcher, logger);
@@ -93,8 +101,9 @@ public class WebhookBackgroundServiceTests
     [Fact]
     public void BoundedQueue_WhenFull_DropsNewItem()
     {
+        var metrics = new FakeWebhookMetrics();
         var logger = new TestLogger<WebhookBackgroundQueue>();
-        var queue = new WebhookBackgroundQueue(logger);
+        var queue = new WebhookBackgroundQueue(metrics, logger);
 
         for (var i = 0; i < 256; i++)
             Assert.True(queue.TryEnqueue(new WebhookQueueItem(BuildEvent($"evt-{i}"), "https://unit.test")));
@@ -103,6 +112,31 @@ public class WebhookBackgroundServiceTests
 
         Assert.False(written);
         Assert.Contains(logger.Entries, x => x.Level == LogLevel.Warning && x.Message.Contains("background queue is full", StringComparison.Ordinal));
+        var snapshot = queue.GetSnapshot();
+        Assert.Equal(256, snapshot.QueueDepth);
+        Assert.Equal(256, snapshot.QueueCapacity);
+        Assert.Equal(256, snapshot.TotalEnqueued);
+        Assert.Equal(1, snapshot.TotalDropped);
+        Assert.Equal(0, snapshot.TotalDequeued);
+        Assert.Equal(256, metrics.QueueEnqueued);
+        Assert.Equal(1, metrics.QueueDropped);
+    }
+
+    [Fact]
+    public async Task QueueSnapshot_Depth_TracksEnqueueAndDequeue()
+    {
+        var queue = new WebhookBackgroundQueue(new FakeWebhookMetrics(), new TestLogger<WebhookBackgroundQueue>());
+
+        Assert.Equal(0, queue.GetSnapshot().QueueDepth);
+        Assert.True(queue.TryEnqueue(new WebhookQueueItem(BuildEvent("evt-1"), "https://unit.test")));
+        Assert.True(queue.TryEnqueue(new WebhookQueueItem(BuildEvent("evt-2"), "https://unit.test")));
+        Assert.Equal(2, queue.GetSnapshot().QueueDepth);
+
+        await using var enumerator = queue.DequeueAllAsync(CancellationToken.None).GetAsyncEnumerator();
+        Assert.True(await enumerator.MoveNextAsync());
+        Assert.Equal(1, queue.GetSnapshot().QueueDepth);
+        Assert.True(await enumerator.MoveNextAsync());
+        Assert.Equal(0, queue.GetSnapshot().QueueDepth);
     }
 
     private static LineEvent BuildEvent(string eventId)

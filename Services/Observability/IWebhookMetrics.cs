@@ -12,6 +12,9 @@ public interface IWebhookMetrics
     void RecordAiQuotaExhausted(string handlerType);
     void RecordCacheHit(string handlerType);
     void RecordMergeJoined(string handlerType);
+    void RecordQueueEnqueued();
+    void RecordQueueDropped();
+    void RecordQueueDequeued();
     void RecordReplySent(int messageCount);
     void RecordReplyFailed(int? statusCode = null);
 }

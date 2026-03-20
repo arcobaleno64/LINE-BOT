@@ -12,6 +12,7 @@ builder.Services.AddHttpClient();
 // ---------- DI: Conversation History ----------
 builder.Services.AddSingleton(new ConversationHistoryService(maxRounds: 15, idleMinutes: -1));
 builder.Services.AddSingleton<IWebhookMetrics, WebhookMetrics>();
+builder.Services.AddSingleton<IWebhookBackgroundQueue, WebhookBackgroundQueue>();
 builder.Services.AddSingleton<IWebhookReadinessService, WebhookReadinessService>();
 
 // ---------- DI: AI Service (主 provider + 自動 failover) ----------
@@ -51,7 +52,6 @@ builder.Services.AddSingleton<ITextMessageHandler, TextMessageHandler>();
 builder.Services.AddSingleton<IImageMessageHandler, ImageMessageHandler>();
 builder.Services.AddSingleton<IFileMessageHandler, FileMessageHandler>();
 builder.Services.AddSingleton<ILineWebhookDispatcher, LineWebhookDispatcher>();
-builder.Services.AddSingleton<IWebhookBackgroundQueue, WebhookBackgroundQueue>();
 builder.Services.AddHostedService<WebhookBackgroundService>();
 
 builder.Services.AddSingleton<WebSearchService>(sp =>

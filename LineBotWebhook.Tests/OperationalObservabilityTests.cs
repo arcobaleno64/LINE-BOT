@@ -351,17 +351,22 @@ public class OperationalObservabilityTests
     [Fact]
     public void ReadinessSnapshot_ReportsCooldownWithoutFailingReadiness()
     {
-        var readiness = new WebhookReadinessService(new Ai429BackoffService(), new ConversationHistoryService());
+        var queue = new FakeWebhookBackgroundQueue();
+        var readiness = new WebhookReadinessService(new Ai429BackoffService(), new ConversationHistoryService(), queue);
         readiness.MarkStarted();
 
         var before = readiness.GetSnapshot();
         Assert.True(before.IsReady);
         Assert.False(before.AiCooldownActive);
         Assert.True(before.CanAcceptAiTraffic);
+        Assert.Equal(0, before.QueueDepth);
+        Assert.Equal(256, before.QueueCapacity);
+        Assert.False(before.QueueSaturated);
+        Assert.True(before.CanAcceptWebhookTraffic);
 
         var backoff = new Ai429BackoffService();
         backoff.Trigger(30);
-        readiness = new WebhookReadinessService(backoff, new ConversationHistoryService());
+        readiness = new WebhookReadinessService(backoff, new ConversationHistoryService(), queue);
         readiness.MarkStarted();
 
         var after = readiness.GetSnapshot();
@@ -369,6 +374,26 @@ public class OperationalObservabilityTests
         Assert.True(after.AiCooldownActive);
         Assert.False(after.CanAcceptAiTraffic);
         Assert.True(after.AiRetryAfterSeconds >= 1);
+    }
+
+    [Fact]
+    public void ReadinessSnapshot_ReportsQueuePressure_AndMarksNotReadyWhenSaturated()
+    {
+        var queue = new FakeWebhookBackgroundQueue
+        {
+            Snapshot = new WebhookQueueSnapshot(256, 256, 256, 3, 0)
+        };
+        var readiness = new WebhookReadinessService(new Ai429BackoffService(), new ConversationHistoryService(), queue);
+        readiness.MarkStarted();
+
+        var snapshot = readiness.GetSnapshot();
+
+        Assert.False(snapshot.IsReady);
+        Assert.Equal("backpressure", snapshot.Status);
+        Assert.Equal(256, snapshot.QueueDepth);
+        Assert.Equal(256, snapshot.QueueCapacity);
+        Assert.True(snapshot.QueueSaturated);
+        Assert.False(snapshot.CanAcceptWebhookTraffic);
     }
 
     private static LineEvent BuildTextEvent(string sourceType, string text)
