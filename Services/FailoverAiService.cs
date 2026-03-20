@@ -11,10 +11,11 @@ public class FailoverAiService : IAiService
         IHttpClientFactory httpClientFactory,
         IConfiguration config,
         ConversationHistoryService history,
+        ILoggerFactory loggerFactory,
         ILogger<FailoverAiService> logger)
     {
         _logger = logger;
-        _providers = BuildProviders(httpClientFactory, config, history);
+        _providers = BuildProviders(httpClientFactory, config, history, loggerFactory);
 
         if (_providers.Count == 0)
             throw new InvalidOperationException("No AI providers are configured. Please set at least one provider API key.");
@@ -49,7 +50,12 @@ public class FailoverAiService : IAiService
             }
             catch (Exception ex) when (ShouldFailover(ex))
             {
-                _logger.LogWarning(ex, "Provider {Provider} failed for {RequestType}; trying next provider", provider.Name, requestType);
+                _logger.LogWarning(
+                    "Provider {Provider} failed for {RequestType}; trying next provider. StatusCode={StatusCode} IsQuotaExhausted={IsQuotaExhausted}",
+                    provider.Name,
+                    requestType,
+                    GetStatusCode(ex),
+                    IsQuotaOrResourceExhausted(ex));
                 lastException = ex;
             }
         }
@@ -69,12 +75,15 @@ public class FailoverAiService : IAiService
 
             if ((int?)httpEx.StatusCode is >= 500 and <= 599)
                 return true;
+
+            if (IsQuotaOrResourceExhausted(httpEx.Message))
+                return true;
         }
 
         return ex.InnerException is not null && ShouldFailover(ex.InnerException);
     }
 
-    private static IReadOnlyList<ProviderEntry> BuildProviders(IHttpClientFactory httpClientFactory, IConfiguration config, ConversationHistoryService history)
+    private static IReadOnlyList<ProviderEntry> BuildProviders(IHttpClientFactory httpClientFactory, IConfiguration config, ConversationHistoryService history, ILoggerFactory loggerFactory)
     {
         var primary = (config["Ai:Provider"] ?? "Gemini").Trim();
         var fallback = config["Ai:FallbackProvider"]?.Trim();
@@ -88,7 +97,7 @@ public class FailoverAiService : IAiService
         var providers = new List<ProviderEntry>();
         foreach (var name in orderedNames.Distinct(StringComparer.OrdinalIgnoreCase))
         {
-            var provider = TryCreateProvider(name, httpClientFactory, config, history);
+            var provider = TryCreateProvider(name, httpClientFactory, config, history, loggerFactory);
             if (provider is not null)
                 providers.Add(provider);
         }
@@ -96,14 +105,14 @@ public class FailoverAiService : IAiService
         return providers;
     }
 
-    private static ProviderEntry? TryCreateProvider(string name, IHttpClientFactory httpClientFactory, IConfiguration config, ConversationHistoryService history)
+    private static ProviderEntry? TryCreateProvider(string name, IHttpClientFactory httpClientFactory, IConfiguration config, ConversationHistoryService history, ILoggerFactory loggerFactory)
     {
         if (name.Equals("Gemini", StringComparison.OrdinalIgnoreCase))
         {
             if (AiConfigurationHelpers.GetConfiguredValues(config, "Ai:Gemini:ApiKey", "Ai:Gemini:SecondaryApiKey").Count == 0)
                 return null;
 
-            return new ProviderEntry("Gemini", new GeminiService(httpClientFactory.CreateClient(), config, history));
+            return new ProviderEntry("Gemini", new GeminiService(httpClientFactory.CreateClient(), config, history, loggerFactory.CreateLogger<GeminiService>()));
         }
 
         if (name.Equals("OpenAI", StringComparison.OrdinalIgnoreCase))
@@ -123,6 +132,36 @@ public class FailoverAiService : IAiService
         }
 
         return null;
+    }
+
+    private static int? GetStatusCode(Exception ex)
+    {
+        if (ex is HttpRequestException httpEx && httpEx.StatusCode is HttpStatusCode statusCode)
+            return (int)statusCode;
+
+        return ex.InnerException is not null ? GetStatusCode(ex.InnerException) : null;
+    }
+
+    private static bool IsQuotaOrResourceExhausted(Exception ex)
+    {
+        if (ex is HttpRequestException httpEx && IsQuotaOrResourceExhausted(httpEx.Message))
+            return true;
+
+        return ex.InnerException is not null && IsQuotaOrResourceExhausted(ex.InnerException);
+    }
+
+    private static bool IsQuotaOrResourceExhausted(string? message)
+    {
+        if (string.IsNullOrWhiteSpace(message))
+            return false;
+
+        var normalized = message.ToLowerInvariant();
+        return normalized.Contains("quota")
+            || normalized.Contains("resource_exhausted")
+            || normalized.Contains("rpd")
+            || normalized.Contains("daily")
+            || normalized.Contains("limit exceeded")
+            || normalized.Contains("exceeded your current quota");
     }
 
     private sealed record ProviderEntry(string Name, IAiService Service);

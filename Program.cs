@@ -21,6 +21,7 @@ builder.Services.AddSingleton<IAiService>(sp =>
         sp.GetRequiredService<IHttpClientFactory>(),
         sp.GetRequiredService<IConfiguration>(),
         sp.GetRequiredService<ConversationHistoryService>(),
+        sp.GetRequiredService<ILoggerFactory>(),
         sp.GetRequiredService<ILogger<FailoverAiService>>()));
 
 // ---------- DI: LINE Reply Service ----------
