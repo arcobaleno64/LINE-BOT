@@ -73,7 +73,9 @@ if (app.Environment.IsDevelopment())
 
 app.MapControllers();
 app.MapGet("/", () => Results.Ok("LINE Bot Webhook is running"));
+app.MapMethods("/", ["HEAD"], () => Results.Ok());
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
+app.MapMethods("/health", ["HEAD"], () => Results.Ok());
 app.MapGet("/ready", (IWebhookReadinessService readiness) =>
 {
     var snapshot = readiness.GetSnapshot();
@@ -81,3 +83,7 @@ app.MapGet("/ready", (IWebhookReadinessService readiness) =>
 });
 
 app.Run();
+
+public partial class Program
+{
+}
