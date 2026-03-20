@@ -11,6 +11,7 @@ public class FileMessageHandler : IFileMessageHandler
     private readonly IAiService _ai;
     private readonly LineReplyService _reply;
     private readonly LineContentService _content;
+    private readonly DocumentGroundingService _documents;
     private readonly GeneratedFileService _files;
     private readonly UserRequestThrottleService _throttle;
     private readonly Ai429BackoffService _aiBackoff;
@@ -22,6 +23,7 @@ public class FileMessageHandler : IFileMessageHandler
         IAiService ai,
         LineReplyService reply,
         LineContentService content,
+        DocumentGroundingService documents,
         GeneratedFileService files,
         UserRequestThrottleService throttle,
         Ai429BackoffService aiBackoff,
@@ -32,6 +34,7 @@ public class FileMessageHandler : IFileMessageHandler
         _ai = ai;
         _reply = reply;
         _content = content;
+        _documents = documents;
         _files = files;
         _throttle = throttle;
         _aiBackoff = aiBackoff;
@@ -78,8 +81,10 @@ public class FileMessageHandler : IFileMessageHandler
             return true;
         }
 
+        var preparedDocument = _documents.Prepare(fileName, mimeType, extractedText, "請幫我整理重點、關鍵結論與待辦事項。");
+
         var aiReply = await TryGetAiReplyAsync(
-            () => _ai.GetReplyFromDocumentAsync(fileName, mimeType, extractedText, "請幫我整理重點、關鍵結論與待辦事項。", userKey, ct),
+            () => _ai.GetReplyFromDocumentAsync(fileName, mimeType, preparedDocument.SelectedContext, preparedDocument.GroundedPrompt, userKey, ct),
             evt.ReplyToken!,
             logContext,
             ct);

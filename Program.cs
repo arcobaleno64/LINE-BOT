@@ -39,6 +39,9 @@ builder.Services.AddSingleton<LineContentService>(sp =>
         sp.GetRequiredService<IConfiguration>()));
 
 builder.Services.AddSingleton<GeneratedFileService>();
+builder.Services.AddSingleton<DocumentChunker>();
+builder.Services.AddSingleton<DocumentChunkSelector>();
+builder.Services.AddSingleton<DocumentGroundingService>();
 builder.Services.AddSingleton<UserRequestThrottleService>();
 builder.Services.AddSingleton<Ai429BackoffService>();
 builder.Services.AddSingleton<AiResponseCacheService>();

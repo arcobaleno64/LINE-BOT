@@ -366,12 +366,14 @@ internal static class TestFactory
         var httpClient = new HttpClient(httpHandler);
         var reply = new LineReplyService(httpClient, config, actualMetrics, replyLogger ?? NullLogger<LineReplyService>.Instance);
         var content = new LineContentService(httpClient, config);
+        var documents = new DocumentGroundingService(new DocumentChunker(), new DocumentChunkSelector());
 
         return new FileMessageHandler(
             config,
             ai,
             reply,
             content,
+            documents,
             files ?? new GeneratedFileService(),
             throttle ?? new UserRequestThrottleService(),
             backoff ?? new Ai429BackoffService(),
