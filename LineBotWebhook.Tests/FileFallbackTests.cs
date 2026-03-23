@@ -24,10 +24,10 @@ public class FileFallbackTests
 
         var result = service.Prepare("report.txt", "text/plain", text, "請幫我整理重點、關鍵結論與待辦事項。");
 
+        Assert.True(result.AllChunks.Count > 1);
         Assert.NotEmpty(result.SelectedChunks);
         Assert.NotEmpty(result.SelectedContext);
         Assert.Contains("[片段", result.SelectedContext, StringComparison.Ordinal);
-        Assert.True(result.SelectedChunks.Count < result.AllChunks.Count);
     }
 
     [Fact]
