@@ -1,6 +1,6 @@
 namespace LineBotWebhook.Services;
 
-public sealed class DocumentChunker
+public sealed class DocumentChunker : IDocumentChunker
 {
     private const int TargetChunkSize = 1500;
     private const int ChunkOverlap = 200;
@@ -53,7 +53,6 @@ public sealed class DocumentChunker
             return text.Length;
 
         var searchStart = Math.Max(start + 1, idealEnd - BacktrackWindow);
-
         for (var i = idealEnd - 1; i >= searchStart; i--)
         {
             if (i < text.Length - 1 && text[i] == '\n' && text[i + 1] == '\n')
@@ -68,4 +67,6 @@ public sealed class DocumentChunker
 
         return idealEnd;
     }
+
+    public IReadOnlyList<DocumentChunk> ChunkText(string text) => Chunk(text);
 }

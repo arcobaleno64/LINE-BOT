@@ -64,9 +64,7 @@ public class LineWebhookController(
 
         var publicBaseUrl = _publicBaseUrlResolver.Resolve(Request);
         foreach (var evt in webhook.Events)
-        {
             _backgroundQueue.TryEnqueue(new WebhookQueueItem(evt, publicBaseUrl));
-        }
 
         return Ok();
     }

@@ -6,6 +6,8 @@ public sealed class DocumentGroundingService
 
     private readonly DocumentChunker _chunker;
     private readonly DocumentChunkSelector _selector;
+    private readonly ISemanticChunkSelector? _semanticSelector;
+    private readonly ILogger<DocumentGroundingService>? _logger;
 
     public DocumentGroundingService(DocumentChunker chunker, DocumentChunkSelector selector)
     {
@@ -13,21 +15,53 @@ public sealed class DocumentGroundingService
         _selector = selector;
     }
 
+    public DocumentGroundingService(
+        DocumentChunker chunker,
+        DocumentChunkSelector selector,
+        ISemanticChunkSelector semanticSelector,
+        ILogger<DocumentGroundingService> logger)
+    {
+        _chunker = chunker;
+        _selector = selector;
+        _semanticSelector = semanticSelector;
+        _logger = logger;
+    }
+
     public DocumentGroundingResult Prepare(string fileName, string mimeType, string extractedText, string? userPrompt = null)
     {
         var chunks = _chunker.Chunk(extractedText);
         var mode = DetermineMode(userPrompt);
         var effectivePrompt = string.IsNullOrWhiteSpace(userPrompt) ? DefaultSummaryPrompt : userPrompt.Trim();
-        var selectedChunks = mode == DocumentTaskMode.QuestionAnswer
+        var lexicalSelectedChunks = mode == DocumentTaskMode.QuestionAnswer
             ? _selector.SelectForQuestion(chunks, effectivePrompt)
             : _selector.SelectForSummary(chunks);
 
-        if (selectedChunks.Count == 0 && chunks.Count > 0)
-            selectedChunks = [chunks[0]];
+        if (lexicalSelectedChunks.Count == 0 && chunks.Count > 0)
+            lexicalSelectedChunks = [chunks[0]];
 
-        var selectedContext = string.Join(
-            "\n\n",
-            selectedChunks.Select(chunk => $"[片段 {chunk.Index + 1}]\n{chunk.Text}"));
+        var selectedChunks = lexicalSelectedChunks;
+        var selectedContext = BuildContext(selectedChunks);
+        if (_semanticSelector is not null && chunks.Count > 1)
+        {
+            try
+            {
+                var semanticContext = _semanticSelector.SelectRelevantTextAsync(chunks, effectivePrompt, CancellationToken.None)
+                    .GetAwaiter()
+                    .GetResult();
+
+                if (!string.IsNullOrWhiteSpace(semanticContext))
+                {
+                    selectedContext = semanticContext;
+                    var semanticSelectedChunks = ResolveSelectedChunks(chunks, semanticContext);
+                    if (semanticSelectedChunks.Count > 0)
+                        selectedChunks = semanticSelectedChunks;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning(ex, "Document semantic selection failed. Falling back to lexical selection.");
+            }
+        }
 
         var groundedPrompt = mode == DocumentTaskMode.QuestionAnswer
             ? BuildQuestionAnswerPrompt(fileName, mimeType, effectivePrompt)
@@ -39,6 +73,29 @@ public sealed class DocumentGroundingService
             selectedChunks,
             selectedContext,
             groundedPrompt);
+    }
+
+    private static string BuildContext(IReadOnlyList<DocumentChunk> chunks)
+    {
+        return string.Join(
+            "\n\n",
+            chunks.Select(chunk => $"[片段 {chunk.Index + 1}]\n{chunk.Text}"));
+    }
+
+    private static IReadOnlyList<DocumentChunk> ResolveSelectedChunks(IReadOnlyList<DocumentChunk> chunks, string context)
+    {
+        var matches = System.Text.RegularExpressions.Regex.Matches(context, @"\[片段\s+(?<index>\d+)\]");
+        if (matches.Count == 0)
+            return [];
+
+        var indexes = matches
+            .Select(match => int.TryParse(match.Groups["index"].Value, out var value) ? value - 1 : -1)
+            .Where(index => index >= 0 && index < chunks.Count)
+            .Distinct()
+            .OrderBy(index => index)
+            .ToArray();
+
+        return indexes.Select(index => chunks[index]).ToArray();
     }
 
     private static DocumentTaskMode DetermineMode(string? userPrompt)

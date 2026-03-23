@@ -134,6 +134,27 @@ internal sealed class FakeWebhookBackgroundQueue : IWebhookBackgroundQueue
     }
 }
 
+internal sealed class FakeEmbeddingService : IEmbeddingService
+{
+    public Func<string, CancellationToken, Task<IReadOnlyList<float>>> OnEmbedAsync { get; set; }
+        = (text, ct) => Task.FromResult<IReadOnlyList<float>>([1f, 0f, 0f]);
+
+    public Task<IReadOnlyList<float>> GetEmbeddingAsync(string text, CancellationToken ct = default)
+        => OnEmbedAsync(text, ct);
+}
+
+internal sealed class FakeSemanticChunkSelector : ISemanticChunkSelector
+{
+    public int Calls { get; private set; }
+    public Func<IReadOnlyList<DocumentChunk>, string, CancellationToken, Task<string>> OnSelectAsync { get; set; }
+        = (chunks, prompt, ct) => Task.FromResult(string.Join("\n\n", chunks.Select(chunk => chunk.Text)));
+
+    public Task<string> SelectRelevantTextAsync(IReadOnlyList<DocumentChunk> chunks, string userPrompt, CancellationToken ct = default)
+    {
+        Calls++;
+        return OnSelectAsync(chunks, userPrompt, ct);
+    }
+}
 internal sealed class StaticResultTextHandler(bool handled) : ITextMessageHandler
 {
     public Task<bool> HandleAsync(LineEvent evt, string publicBaseUrl, CancellationToken ct)
@@ -189,7 +210,6 @@ internal sealed class FakeWebhookMetrics : IWebhookMetrics
     public void RecordReplySent(int messageCount) => RepliesSent++;
     public void RecordReplyFailed(int? statusCode = null) => RepliesFailed++;
 }
-
 internal sealed record CapturedLogEntry(
     LogLevel Level,
     string Message,
@@ -356,6 +376,7 @@ internal static class TestFactory
         IAiService ai,
         RecordingHttpMessageHandler httpHandler,
         IWebhookMetrics? metrics = null,
+        DocumentGroundingService? documents = null,
         GeneratedFileService? files = null,
         UserRequestThrottleService? throttle = null,
         Ai429BackoffService? backoff = null,
@@ -366,14 +387,14 @@ internal static class TestFactory
         var httpClient = new HttpClient(httpHandler);
         var reply = new LineReplyService(httpClient, config, actualMetrics, replyLogger ?? NullLogger<LineReplyService>.Instance);
         var content = new LineContentService(httpClient, config);
-        var documents = new DocumentGroundingService(new DocumentChunker(), new DocumentChunkSelector());
+        var actualDocuments = documents ?? new DocumentGroundingService(new DocumentChunker(), new DocumentChunkSelector());
 
         return new FileMessageHandler(
             config,
             ai,
             reply,
             content,
-            documents,
+            actualDocuments,
             files ?? new GeneratedFileService(),
             throttle ?? new UserRequestThrottleService(),
             backoff ?? new Ai429BackoffService(),

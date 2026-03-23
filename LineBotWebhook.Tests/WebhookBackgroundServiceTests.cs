@@ -138,7 +138,6 @@ public class WebhookBackgroundServiceTests
         Assert.True(await enumerator.MoveNextAsync());
         Assert.Equal(0, queue.GetSnapshot().QueueDepth);
     }
-
     private static LineEvent BuildEvent(string eventId)
     {
         return new LineEvent

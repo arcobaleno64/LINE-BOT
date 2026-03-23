@@ -271,6 +271,42 @@ public class CharacterizationTests
     }
 
     [Fact]
+    public async Task FileScannedPdf_ReturnsExistingPdfMessage()
+    {
+        var config = TestFactory.BuildConfig();
+        var ai = new FakeAiService();
+        var handler = new RecordingHttpMessageHandler((request, ct) =>
+        {
+            if (request.RequestUri!.ToString().Contains("api-data.line.me"))
+            {
+                var response = new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new ByteArrayContent(System.Text.Encoding.UTF8.GetBytes("%PDF-1.4"))
+                };
+                response.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/pdf");
+                return Task.FromResult(response);
+            }
+
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK));
+        });
+
+        var fileHandler = TestFactory.CreateFileHandler(config, ai, handler);
+        var evt = new LineEvent
+        {
+            Type = "message",
+            ReplyToken = "r1",
+            Source = new LineSource { Type = "user", UserId = "u1" },
+            Message = new LineMessage { Id = "m1", Type = "file", FileName = "scan.pdf" }
+        };
+
+        await fileHandler.HandleAsync(evt, "https://unit.test", CancellationToken.None);
+
+        var replyText = TestFactory.GetLastReplyText(handler);
+        Assert.NotNull(replyText);
+        Assert.Contains("掃描型或圖片型 PDF", replyText!, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task FileSupported_IncludesDownloadUrl()
     {
         var config = TestFactory.BuildConfig();
