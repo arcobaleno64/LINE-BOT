@@ -134,6 +134,59 @@ internal sealed class FakeWebhookBackgroundQueue : IWebhookBackgroundQueue
     }
 }
 
+internal sealed class FakeConversationSummaryQueue : IConversationSummaryQueue
+{
+    private readonly List<ConversationSummaryWorkItem> _items = [];
+
+    public bool TryEnqueueResult { get; set; } = true;
+    public int CompleteCalls { get; private set; }
+    public IReadOnlyList<ConversationSummaryWorkItem> Items => _items;
+    public ConversationSummaryQueueSnapshot Snapshot { get; set; } = new(0, 64, 0, 0, 0);
+
+    public bool TryEnqueue(ConversationSummaryWorkItem item)
+    {
+        if (!TryEnqueueResult)
+        {
+            Snapshot = Snapshot with
+            {
+                TotalDropped = Snapshot.TotalDropped + 1
+            };
+            return false;
+        }
+
+        _items.Add(item);
+        Snapshot = Snapshot with
+        {
+            QueueDepth = Snapshot.QueueDepth + 1,
+            TotalEnqueued = Snapshot.TotalEnqueued + 1
+        };
+        return true;
+    }
+
+    public async IAsyncEnumerable<ConversationSummaryWorkItem> DequeueAllAsync([System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        foreach (var item in _items)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Snapshot = Snapshot with
+            {
+                QueueDepth = Math.Max(0, Snapshot.QueueDepth - 1),
+                TotalDequeued = Snapshot.TotalDequeued + 1
+            };
+            yield return item;
+        }
+
+        await Task.CompletedTask;
+    }
+
+    public ConversationSummaryQueueSnapshot GetSnapshot() => Snapshot;
+
+    public void Complete()
+    {
+        CompleteCalls++;
+    }
+}
+
 internal sealed class FakeEmbeddingService : IEmbeddingService
 {
     public Func<string, CancellationToken, Task<IReadOnlyList<float>>> OnEmbedAsync { get; set; }
@@ -153,6 +206,22 @@ internal sealed class FakeSemanticChunkSelector : ISemanticChunkSelector
     {
         Calls++;
         return OnSelectAsync(chunks, userPrompt, ct);
+    }
+}
+
+internal sealed class FakeConversationSummaryGenerator : IConversationSummaryGenerator
+{
+    public int Calls { get; private set; }
+    public Func<string?, IReadOnlyList<ConversationHistoryService.ChatMessage>, CancellationToken, Task<string>> OnGenerateAsync { get; set; }
+        = (existingSummary, pendingMessages, ct) => Task.FromResult("summary");
+
+    public Task<string> GenerateAsync(
+        string? existingSummary,
+        IReadOnlyList<ConversationHistoryService.ChatMessage> pendingMessages,
+        CancellationToken ct = default)
+    {
+        Calls++;
+        return OnGenerateAsync(existingSummary, pendingMessages, ct);
     }
 }
 internal sealed class StaticResultTextHandler(bool handled) : ITextMessageHandler

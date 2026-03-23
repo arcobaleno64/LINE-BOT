@@ -10,7 +10,14 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddHttpClient();
 
 // ---------- DI: Conversation History ----------
-builder.Services.AddSingleton(new ConversationHistoryService(maxRounds: 15, idleMinutes: -1));
+builder.Services.AddSingleton<IConversationSummaryQueue, ConversationSummaryQueue>();
+builder.Services.AddSingleton<IConversationSummaryGenerator, ConversationSummaryGenerator>();
+builder.Services.AddSingleton<ConversationHistoryService>(sp =>
+    new ConversationHistoryService(
+        sp.GetRequiredService<IConversationSummaryQueue>(),
+        sp.GetRequiredService<ILogger<ConversationHistoryService>>(),
+        maxRounds: 15,
+        idleMinutes: -1));
 builder.Services.AddSingleton<IWebhookMetrics, WebhookMetrics>();
 builder.Services.AddSingleton<IWebhookBackgroundQueue, WebhookBackgroundQueue>();
 builder.Services.AddSingleton<IWebhookReadinessService, WebhookReadinessService>();
@@ -60,6 +67,7 @@ builder.Services.AddSingleton<IImageMessageHandler, ImageMessageHandler>();
 builder.Services.AddSingleton<IFileMessageHandler, FileMessageHandler>();
 builder.Services.AddSingleton<ILineWebhookDispatcher, LineWebhookDispatcher>();
 builder.Services.AddHostedService<WebhookBackgroundService>();
+builder.Services.AddHostedService<ConversationSummaryWorker>();
 
 builder.Services.AddSingleton<WebSearchService>(sp =>
     new WebSearchService(

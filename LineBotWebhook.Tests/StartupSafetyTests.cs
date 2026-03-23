@@ -35,4 +35,26 @@ public class StartupSafetyTests : IClassFixture<WebApplicationFactory<Program>>
         Assert.NotNull(scope.ServiceProvider.GetRequiredService<ISemanticChunkSelector>());
         Assert.NotNull(scope.ServiceProvider.GetRequiredService<IFileMessageHandler>());
     }
+
+    [Fact]
+    public void RequiredConversationSummaryServices_CanResolve()
+    {
+        var app = _factory.WithWebHostBuilder(builder =>
+        {
+            builder.ConfigureAppConfiguration((_, config) =>
+            {
+                config.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["Ai:Provider"] = "Gemini",
+                    ["Ai:Gemini:ApiKey"] = "test-gemini-key"
+                });
+            });
+        });
+
+        using var scope = app.Services.CreateScope();
+
+        Assert.NotNull(scope.ServiceProvider.GetRequiredService<IConversationSummaryQueue>());
+        Assert.NotNull(scope.ServiceProvider.GetRequiredService<IConversationSummaryGenerator>());
+        Assert.NotNull(scope.ServiceProvider.GetRequiredService<ConversationHistoryService>());
+    }
 }
