@@ -7,19 +7,15 @@ public sealed class DocumentChunkSelector
 
     public IReadOnlyList<DocumentChunk> SelectForSummary(IReadOnlyList<DocumentChunk> chunks)
     {
+        if (chunks.Count == 0)
+            return [];
+
         if (chunks.Count <= MaxSelectedChunks)
-            return chunks;
+            return ApplyContextBudget(chunks);
 
         var targetCount = Math.Min(MaxSelectedChunks, chunks.Count);
-        var selectedIndexes = new SortedSet<int>();
-        for (var i = 0; i < targetCount; i++)
-        {
-            var ratio = targetCount == 1 ? 0d : (double)i / (targetCount - 1);
-            var index = (int)Math.Round(ratio * (chunks.Count - 1));
-            selectedIndexes.Add(index);
-        }
-
-        return ApplyContextBudget(selectedIndexes.Select(index => chunks[index]));
+        var anchors = BuildCoverageAnchors(chunks, targetCount);
+        return ApplyContextBudget(anchors.Select(index => chunks[index]));
     }
 
     public IReadOnlyList<DocumentChunk> SelectForQuestion(IReadOnlyList<DocumentChunk> chunks, string query)
@@ -86,6 +82,76 @@ public sealed class DocumentChunkSelector
         var firstLine = chunk.Text.Split('\n', 2)[0];
         if (firstLine.Length <= 80 && queryTokens.Any(token => Normalize(firstLine).Contains(token, StringComparison.Ordinal)))
             score += 2d;
+
+        return score;
+    }
+
+    private static SortedSet<int> BuildCoverageAnchors(IReadOnlyList<DocumentChunk> chunks, int targetCount)
+    {
+        var selectedIndexes = new SortedSet<int>();
+
+        for (var i = 0; i < targetCount; i++)
+        {
+            var ratio = targetCount == 1 ? 0d : (double)i / (targetCount - 1);
+            var index = (int)Math.Round(ratio * (chunks.Count - 1));
+            selectedIndexes.Add(index);
+        }
+
+        var boostedCandidates = chunks
+            .Select(chunk => new
+            {
+                chunk.Index,
+                Score = ScoreSummaryChunk(chunk)
+            })
+            .Where(x => x.Score > 0)
+            .OrderByDescending(x => x.Score)
+            .ThenBy(x => x.Index)
+            .Select(x => x.Index);
+
+        foreach (var candidate in boostedCandidates)
+        {
+            if (selectedIndexes.Count >= targetCount)
+                break;
+
+            selectedIndexes.Add(candidate);
+        }
+
+        while (selectedIndexes.Count > targetCount)
+        {
+            var removable = selectedIndexes
+                .Where(index => index != 0 && index != chunks.Count - 1)
+                .OrderBy(index => ScoreSummaryChunk(chunks[index]))
+                .FirstOrDefault();
+
+            if (removable == 0 && !selectedIndexes.Contains(0))
+                break;
+
+            selectedIndexes.Remove(removable);
+        }
+
+        return selectedIndexes;
+    }
+
+    private static double ScoreSummaryChunk(DocumentChunk chunk)
+    {
+        var score = 0d;
+        var lines = chunk.Text
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        if (lines.Length == 0)
+            return score;
+
+        var firstLine = lines[0];
+        if (firstLine.Length <= 80 && (firstLine.Contains('#') || firstLine.Contains('：') || firstLine.Contains(':')))
+            score += 4d;
+
+        if (chunk.Text.Contains("- ", StringComparison.Ordinal)
+            || chunk.Text.Contains("•", StringComparison.Ordinal)
+            || chunk.Text.Contains("1.", StringComparison.Ordinal))
+            score += 2d;
+
+        if (chunk.Index == 0)
+            score += 1.5d;
 
         return score;
     }

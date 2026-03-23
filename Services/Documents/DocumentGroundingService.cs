@@ -41,7 +41,7 @@ public sealed class DocumentGroundingService
 
         var selectedChunks = lexicalSelectedChunks;
         var selectedContext = BuildContext(selectedChunks);
-        if (_semanticSelector is not null && chunks.Count > 1)
+        if (mode == DocumentTaskMode.QuestionAnswer && _semanticSelector is not null && chunks.Count > 1)
         {
             try
             {
@@ -121,7 +121,7 @@ public sealed class DocumentGroundingService
     {
         return $"""
 請只根據我提供的文件片段整理內容，不要補充片段中沒有出現的事實。
-若片段不足以支持某項結論，請明確寫出「未明確提及」。
+若片段不足以支持某項結論，請明確寫出「未明確提及」或「無法確認」，不可自行補完。
 
 文件資訊：
 - 檔名：{fileName}
@@ -142,6 +142,7 @@ public sealed class DocumentGroundingService
         return $"""
 請只根據我提供的文件片段回答問題，不要猜測或補完片段中沒有的事實。
 若目前片段不足以回答，請直接說「根據目前提供的文件片段，無法確認」。
+不得使用常識、慣例或上下文推測補完答案。
 
 文件資訊：
 - 檔名：{fileName}
@@ -150,7 +151,7 @@ public sealed class DocumentGroundingService
 問題：
 {userPrompt}
 
-若能回答，請直接回答；必要時可附上「依據片段」說明。
+若能回答，請直接回答；必要時可附上簡短的「依據片段」或片段編號。
 """;
     }
 }

@@ -49,7 +49,7 @@ public class DocumentPipelineTests
     }
 
     [Fact]
-    public void GroundingService_SummaryMode_UsesRepresentativeChunks_NotFullDocument()
+    public void GroundingService_NoQuestionPrompt_UsesSummaryMode()
     {
         var service = new DocumentGroundingService(new DocumentChunker(), new DocumentChunkSelector());
         var text = BuildLongDocument(40, "這是摘要模式測試內容");
@@ -57,10 +57,33 @@ public class DocumentPipelineTests
         var result = service.Prepare("report.txt", "text/plain", text, "請幫我整理重點、關鍵結論與待辦事項。");
 
         Assert.Equal(DocumentTaskMode.Summary, result.Mode);
+    }
+
+    [Fact]
+    public void GroundingService_QuestionPrompt_UsesQuestionAnswerMode()
+    {
+        var service = new DocumentGroundingService(new DocumentChunker(), new DocumentChunkSelector());
+        var text = BuildLongDocument(12, "這是問答模式測試內容");
+
+        var result = service.Prepare("report.txt", "text/plain", text, "這份文件提到的截止日是什麼？");
+
+        Assert.Equal(DocumentTaskMode.QuestionAnswer, result.Mode);
+    }
+
+    [Fact]
+    public void GroundingService_SummaryMode_Prompt_RequiresGroundedSummary()
+    {
+        var service = new DocumentGroundingService(new DocumentChunker(), new DocumentChunkSelector());
+        var text = BuildLongDocument(40, "這是摘要模式測試內容");
+
+        var result = service.Prepare("report.txt", "text/plain", text, "請幫我整理重點、關鍵結論與待辦事項。");
+
         Assert.True(result.AllChunks.Count > 1);
         Assert.True(result.SelectedChunks.Count > 1);
         Assert.True(result.SelectedChunks.Count < result.AllChunks.Count);
         Assert.Contains("請只根據我提供的文件片段整理內容", result.GroundedPrompt, StringComparison.Ordinal);
+        Assert.Contains("未明確提及", result.GroundedPrompt, StringComparison.Ordinal);
+        Assert.DoesNotContain("回答問題", result.GroundedPrompt, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -78,7 +101,7 @@ public class DocumentPipelineTests
     }
 
     [Fact]
-    public void GroundingService_QuestionMode_UsesQueryAwareSelection_AndConservativePrompt()
+    public void GroundingService_QuestionMode_Prompt_InstructsInsufficientEvidenceResponse()
     {
         var service = new DocumentGroundingService(new DocumentChunker(), new DocumentChunkSelector());
         var text = """
@@ -94,6 +117,41 @@ public class DocumentPipelineTests
         Assert.Equal(DocumentTaskMode.QuestionAnswer, result.Mode);
         Assert.Contains("截止日", result.SelectedContext, StringComparison.Ordinal);
         Assert.Contains("無法確認", result.GroundedPrompt, StringComparison.Ordinal);
+        Assert.Contains("不得使用常識、慣例或上下文推測補完答案", result.GroundedPrompt, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ChunkSelector_SummaryMode_PrefersRepresentativeCoverage()
+    {
+        var selector = new DocumentChunkSelector();
+        var chunks = Enumerable.Range(0, 7)
+            .Select(index => new DocumentChunk(index, index * 10, index * 10 + 9, $"第{index + 1}段：一般內容摘要。"))
+            .ToArray();
+
+        var selected = selector.SelectForSummary(chunks);
+
+        Assert.Contains(selected, chunk => chunk.Index == 0);
+        Assert.Contains(selected, chunk => chunk.Index == 6);
+        Assert.True(selected.Count <= 4);
+        Assert.True(selected.Select(chunk => chunk.Index).Distinct().Count() == selected.Count);
+    }
+
+    [Fact]
+    public void ChunkSelector_QuestionMode_PrefersRelevantChunks()
+    {
+        var selector = new DocumentChunkSelector();
+        var chunks = new[]
+        {
+            new DocumentChunk(0, 0, 9, "公司沿革與背景說明。"),
+            new DocumentChunk(1, 10, 19, "付款條件：簽約後 30 日內完成付款。"),
+            new DocumentChunk(2, 20, 29, "截止日為 2026-03-31，負責人是小王。"),
+            new DocumentChunk(3, 30, 39, "附錄與一般補充說明。")
+        };
+
+        var selected = selector.SelectForQuestion(chunks, "這份文件提到的截止日是什麼？");
+
+        Assert.Contains(selected, chunk => chunk.Index == 2);
+        Assert.DoesNotContain(selected, chunk => chunk.Index == 1 && selected.Count == 1);
     }
 
     [Theory]
