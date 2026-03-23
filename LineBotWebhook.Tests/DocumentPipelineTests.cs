@@ -161,6 +161,72 @@ public class DocumentPipelineTests
         Assert.Contains("[片段", aiCall.ExtractedText, StringComparison.Ordinal);
         Assert.NotEqual(longText, aiCall.ExtractedText);
         Assert.Contains("請只根據我提供的文件片段整理內容", aiCall.Prompt, StringComparison.Ordinal);
+        Assert.Contains("重點", aiCall.Prompt, StringComparison.Ordinal);
+
+        var replyText = TestFactory.GetLastReplyText(handler);
+        Assert.NotNull(replyText);
+        Assert.Contains("下載整理檔", replyText!, StringComparison.Ordinal);
+        Assert.Contains("https://unit.test/downloads/", replyText!, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task FileHandler_WithQuestionPrompt_UsesQuestionMode_InRuntimePath()
+    {
+        var captured = new List<(string ExtractedText, string Prompt)>();
+        var config = TestFactory.BuildConfig();
+        var ai = new FakeAiService
+        {
+            OnFileAsync = (name, mime, text, prompt, userKey, ct) =>
+            {
+                captured.Add((text, prompt));
+                return Task.FromResult("根據片段，截止日是 2026-03-31。");
+            }
+        };
+        var longText = """
+第一節：會議背景與摘要。
+
+第二節：截止日為 2026-03-31，負責人是小王，付款窗口為 30 天。
+
+第三節：其他補充資訊與附錄。
+""";
+
+        var handler = new RecordingHttpMessageHandler((request, ct) =>
+        {
+            if (request.RequestUri!.ToString().Contains("api-data.line.me", StringComparison.Ordinal))
+            {
+                var response = new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new ByteArrayContent(Encoding.UTF8.GetBytes(longText))
+                };
+                response.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("text/plain");
+                return Task.FromResult(response);
+            }
+
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK));
+        });
+
+        var fileHandler = TestFactory.CreateFileHandler(config, ai, handler);
+        var evt = new LineEvent
+        {
+            Type = "message",
+            ReplyToken = "r1",
+            Source = new LineSource { Type = "user", UserId = "u1" },
+            Message = new LineMessage
+            {
+                Id = "m1",
+                Type = "file",
+                FileName = "meeting.txt",
+                Text = "這份文件提到的截止日是什麼？"
+            }
+        };
+
+        await fileHandler.HandleAsync(evt, "https://unit.test", CancellationToken.None);
+
+        var aiCall = Assert.Single(captured);
+        Assert.Contains("[片段", aiCall.ExtractedText, StringComparison.Ordinal);
+        Assert.Contains("截止日", aiCall.ExtractedText, StringComparison.Ordinal);
+        Assert.Contains("請只根據我提供的文件片段回答問題", aiCall.Prompt, StringComparison.Ordinal);
+        Assert.Contains("無法確認", aiCall.Prompt, StringComparison.Ordinal);
 
         var replyText = TestFactory.GetLastReplyText(handler);
         Assert.NotNull(replyText);

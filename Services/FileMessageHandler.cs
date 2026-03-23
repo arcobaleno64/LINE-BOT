@@ -6,6 +6,7 @@ namespace LineBotWebhook.Services;
 public class FileMessageHandler : IFileMessageHandler
 {
     private const string HandlerType = "file";
+    private const string DefaultDocumentSummaryPrompt = "請幫我整理重點、關鍵結論與待辦事項。";
 
     private readonly IConfiguration _config;
     private readonly IAiService _ai;
@@ -81,7 +82,8 @@ public class FileMessageHandler : IFileMessageHandler
             return true;
         }
 
-        var preparedDocument = _documents.Prepare(fileName, mimeType, extractedText, "請幫我整理重點、關鍵結論與待辦事項。");
+        var userPrompt = ResolveDocumentPrompt(evt);
+        var preparedDocument = _documents.Prepare(fileName, mimeType, extractedText, userPrompt);
 
         var aiReply = await TryGetAiReplyAsync(
             () => _ai.GetReplyFromDocumentAsync(fileName, mimeType, preparedDocument.SelectedContext, preparedDocument.GroundedPrompt, userKey, ct),
@@ -192,6 +194,14 @@ public class FileMessageHandler : IFileMessageHandler
         return int.TryParse(_config[key], out var value)
             ? Math.Max(1, value)
             : fallback;
+    }
+
+    private static string ResolveDocumentPrompt(LineEvent evt)
+    {
+        var candidate = evt.Message?.Text?.Trim();
+        return string.IsNullOrWhiteSpace(candidate)
+            ? DefaultDocumentSummaryPrompt
+            : candidate;
     }
 
     private static bool IsTooManyRequests(Exception ex)
