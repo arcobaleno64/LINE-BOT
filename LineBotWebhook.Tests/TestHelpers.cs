@@ -28,8 +28,8 @@ internal sealed class FakeAiService : IAiService
     public int ImageCalls { get; private set; }
     public int FileCalls { get; private set; }
 
-    public Func<string, string, CancellationToken, Task<string>> OnTextAsync { get; set; }
-        = (msg, key, ct) => Task.FromResult("AI-OK");
+    public Func<string, string, CancellationToken, bool, Task<string>> OnTextAsync { get; set; }
+        = (msg, key, ct, enableQuickReplies) => Task.FromResult("AI-OK");
 
     public Func<byte[], string, string, string, CancellationToken, Task<string>> OnImageAsync { get; set; }
         = (bytes, mime, prompt, key, ct) => Task.FromResult("IMG-OK");
@@ -37,10 +37,10 @@ internal sealed class FakeAiService : IAiService
     public Func<string, string, string, string, string, CancellationToken, Task<string>> OnFileAsync { get; set; }
         = (fileName, mime, text, prompt, key, ct) => Task.FromResult("FILE-OK");
 
-    public Task<string> GetReplyAsync(string userMessage, string userKey, CancellationToken ct = default)
+    public Task<string> GetReplyAsync(string userMessage, string userKey, CancellationToken ct = default, bool enableQuickReplies = false)
     {
         TextCalls++;
-        return OnTextAsync(userMessage, userKey, ct);
+        return OnTextAsync(userMessage, userKey, ct, enableQuickReplies);
     }
 
     public Task<string> GetReplyFromImageAsync(byte[] imageBytes, string mimeType, string userPrompt, string userKey, CancellationToken ct = default)
@@ -373,13 +373,21 @@ internal static class TestFactory
 
     public static string? GetLastReplyText(RecordingHttpMessageHandler handler)
     {
+        using var doc = GetLastReplyPayload(handler);
+        if (doc is null)
+            return null;
+
+        return doc.RootElement.GetProperty("messages")[0].GetProperty("text").GetString();
+    }
+
+    public static JsonDocument? GetLastReplyPayload(RecordingHttpMessageHandler handler)
+    {
         var replyRequest = handler.Requests.LastOrDefault(r => r.RequestUri?.ToString() == "https://api.line.me/v2/bot/message/reply");
         if (replyRequest?.Content is null)
             return null;
 
         var json = replyRequest.Content.ReadAsStringAsync().GetAwaiter().GetResult();
-        using var doc = JsonDocument.Parse(json);
-        return doc.RootElement.GetProperty("messages")[0].GetProperty("text").GetString();
+        return JsonDocument.Parse(json);
     }
 
     public static TextMessageHandler CreateTextHandler(

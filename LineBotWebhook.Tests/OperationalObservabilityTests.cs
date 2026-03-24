@@ -172,7 +172,7 @@ public class OperationalObservabilityTests
         var metrics = new FakeWebhookMetrics();
         var ai = new FakeAiService
         {
-            OnTextAsync = (msg, key, ct) => Task.FromResult("快取測試回覆")
+            OnTextAsync = (msg, key, ct, enableQuickReplies) => Task.FromResult("快取測試回覆")
         };
         var handler = new RecordingHttpMessageHandler((request, ct) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)));
         var textHandler = TestFactory.CreateTextHandler(config, ai, handler, metrics: metrics);
@@ -192,7 +192,7 @@ public class OperationalObservabilityTests
         var firstCallStarted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         var ai = new FakeAiService
         {
-            OnTextAsync = async (msg, key, ct) =>
+            OnTextAsync = async (msg, key, ct, enableQuickReplies) =>
             {
                 firstCallStarted.TrySetResult(true);
                 return await gate.Task;
@@ -218,7 +218,7 @@ public class OperationalObservabilityTests
         var metrics = new FakeWebhookMetrics();
         var ai = new FakeAiService
         {
-            OnTextAsync = (msg, key, ct) => throw new HttpRequestException("rate limit temporary", null, HttpStatusCode.TooManyRequests)
+            OnTextAsync = (msg, key, ct, enableQuickReplies) => throw new HttpRequestException("rate limit temporary", null, HttpStatusCode.TooManyRequests)
         };
         var handler = new RecordingHttpMessageHandler((request, ct) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)));
         var textHandler = TestFactory.CreateTextHandler(config, ai, handler, metrics: metrics, backoff: new Ai429BackoffService());
@@ -258,7 +258,7 @@ public class OperationalObservabilityTests
         var replyLogger = new TestLogger<LineReplyService>();
         var ai = new FakeAiService
         {
-            OnTextAsync = (msg, key, ct) => Task.FromResult("AI 回覆")
+            OnTextAsync = (msg, key, ct, enableQuickReplies) => Task.FromResult("AI 回覆")
         };
         var handler = new RecordingHttpMessageHandler((request, ct) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)));
         var textHandler = TestFactory.CreateTextHandler(config, ai, handler, metrics: metrics, replyLogger: replyLogger);
@@ -304,7 +304,7 @@ public class OperationalObservabilityTests
         var logger = new TestLogger<TextMessageHandler>();
         var ai = new FakeAiService
         {
-            OnTextAsync = (msg, key, ct) => throw new HttpRequestException("rate limit temporary", null, HttpStatusCode.TooManyRequests)
+            OnTextAsync = (msg, key, ct, enableQuickReplies) => throw new HttpRequestException("rate limit temporary", null, HttpStatusCode.TooManyRequests)
         };
         var handler = new RecordingHttpMessageHandler((request, ct) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)));
         var textHandler = TestFactory.CreateTextHandler(config, ai, handler, metrics: metrics, backoff: new Ai429BackoffService(), logger: logger);
@@ -332,7 +332,7 @@ public class OperationalObservabilityTests
         var logger = new TestLogger<TextMessageHandler>();
         var ai = new FakeAiService
         {
-            OnTextAsync = (msg, key, ct) => throw new HttpRequestException("quota exceeded rpd daily", null, HttpStatusCode.TooManyRequests)
+            OnTextAsync = (msg, key, ct, enableQuickReplies) => throw new HttpRequestException("quota exceeded rpd daily", null, HttpStatusCode.TooManyRequests)
         };
         var handler = new RecordingHttpMessageHandler((request, ct) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)));
         var textHandler = TestFactory.CreateTextHandler(config, ai, handler, metrics: metrics, logger: logger);

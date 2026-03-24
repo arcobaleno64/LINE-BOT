@@ -102,24 +102,27 @@ public class TextMessageHandler : ITextMessageHandler
 {searchOutcome.ContextForAi}
 """;
 
-            var webAiReply = await TryGetAiReplyAsync(() => _ai.GetReplyAsync(prompt, userKey, ct), evt.ReplyToken!, logContext, ct);
+            var webAiReply = await TryGetAiReplyAsync(() => _ai.GetReplyAsync(prompt, userKey, ct, enableQuickReplies: true), evt.ReplyToken!, logContext, ct);
             if (webAiReply is null)
                 return true;
 
+            var webAiResult = QuickReplySuggestionParser.Parse(webAiReply);
+
             var sourceList = WebSearchService.BuildSourceList(searchOutcome.Sources);
             var finalReply = $"""
-{webAiReply}
+{webAiResult.MainText}
 
 參考來源：
 {sourceList}
 """;
 
-            await _reply.ReplyTextAsync(evt.ReplyToken!, finalReply, logContext, ct);
+            await _reply.ReplyTextAsync(evt.ReplyToken!, finalReply, webAiResult.Suggestions, logContext, ct);
             return true;
         }
 
         var textReply = await GetMergedTextReplyAsync(userKey, userText, ct, logContext);
-        await _reply.ReplyTextAsync(evt.ReplyToken!, textReply, logContext, ct);
+        var parsedReply = QuickReplySuggestionParser.Parse(textReply);
+        await _reply.ReplyTextAsync(evt.ReplyToken!, parsedReply.MainText, parsedReply.Suggestions, logContext, ct);
         return true;
     }
 
@@ -234,7 +237,7 @@ public class TextMessageHandler : ITextMessageHandler
 
             try
             {
-                var aiReply = await _ai.GetReplyAsync(userText, userKey, ct);
+                var aiReply = await _ai.GetReplyAsync(userText, userKey, ct, enableQuickReplies: true);
                 if (string.IsNullOrWhiteSpace(aiReply))
                     return "(AI 無回應)";
 

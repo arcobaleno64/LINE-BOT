@@ -23,9 +23,9 @@ public class OpenAiService : IAiService
         _history  = history;
     }
 
-    public async Task<string> GetReplyAsync(string userMessage, string userKey, CancellationToken ct = default)
+    public async Task<string> GetReplyAsync(string userMessage, string userKey, CancellationToken ct = default, bool enableQuickReplies = false)
     {
-        var systemMsg = new { role = "system", content = "你是一位親切的管家，語氣溫暖有禮、回答精簡實用，必要時可條列重點。請全程使用繁體中文，並避免自稱是 AI。" };
+        var systemMsg = new { role = "system", content = BuildSystemPrompt(enableQuickReplies) };
         var historyMsgs = _history.GetHistory(userKey)
             .Select(m => new { role = m.Role, content = m.Content });
         var messages = new[] { systemMsg }
@@ -51,7 +51,8 @@ public class OpenAiService : IAiService
             .GetProperty("content")
             .GetString() ?? "(AI 無回應)";
 
-        _history.Append(userKey, userMessage, content);
+        var parsed = QuickReplySuggestionParser.Parse(content);
+        _history.Append(userKey, userMessage, parsed.MainText);
         return content;
     }
 
@@ -81,5 +82,14 @@ MIME：{mimeType}
 """;
 
         return GetReplyAsync(prompt, userKey, ct);
+    }
+
+    private static string BuildSystemPrompt(bool enableQuickReplies)
+    {
+        const string basePrompt = "你是一位親切的管家，語氣溫暖有禮、回答精簡實用，必要時可條列重點。請全程使用繁體中文，並避免自稱是 AI。";
+        if (!enableQuickReplies)
+            return basePrompt;
+
+        return basePrompt + "\n回答結束後，若適合，可在回覆最後附上唯一格式：\\n\\n<quick-replies>[\"選項1\",\"選項2\"]</quick-replies>。最多 3 個選項，需短、自然、可直接點擊送出；若不適合提供，就不要附加任何 quick reply 區塊。";
     }
 }

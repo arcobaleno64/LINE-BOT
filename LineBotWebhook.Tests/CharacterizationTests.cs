@@ -129,7 +129,11 @@ public class CharacterizationTests
     public async Task GroupTextWithMention_IsHandled()
     {
         var config = TestFactory.BuildConfig();
-        var ai = new FakeAiService();
+        var ai = new FakeAiService
+        {
+            OnTextAsync = (msg, key, ct, enableQuickReplies) =>
+                Task.FromResult("主回覆\n\n<quick-replies>[\"分析文件\",\"分析圖片\"]</quick-replies>")
+        };
         var handler = new RecordingHttpMessageHandler((request, ct) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)));
         var textHandler = TestFactory.CreateTextHandler(config, ai, handler);
 
@@ -138,7 +142,55 @@ public class CharacterizationTests
 
         Assert.True(handled);
         Assert.Equal(1, ai.TextCalls);
-        Assert.NotNull(TestFactory.GetLastReplyText(handler));
+        Assert.Equal("主回覆", TestFactory.GetLastReplyText(handler));
+        using var payload = TestFactory.GetLastReplyPayload(handler);
+        Assert.NotNull(payload);
+        Assert.True(payload!.RootElement.GetProperty("messages")[0].TryGetProperty("quickReply", out var quickReply));
+        Assert.Equal(2, quickReply.GetProperty("items").GetArrayLength());
+    }
+
+    [Fact]
+    public async Task TextMessageHandler_AiReplyWithQuickReplyMetadata_DoesNotLeakMetadataToUser()
+    {
+        var config = TestFactory.BuildConfig();
+        var ai = new FakeAiService
+        {
+            OnTextAsync = (msg, key, ct, enableQuickReplies) =>
+                Task.FromResult("這是主回覆\n\n<quick-replies>[\"分析文件\",\"分析圖片\",\"再問一個\"]</quick-replies>")
+        };
+        var handler = new RecordingHttpMessageHandler((request, ct) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)));
+        var textHandler = TestFactory.CreateTextHandler(config, ai, handler);
+
+        var evt = BuildTextEvent("user", "你好");
+        await textHandler.HandleAsync(evt, "https://unit.test", CancellationToken.None);
+
+        var replyText = TestFactory.GetLastReplyText(handler);
+        Assert.Equal("這是主回覆", replyText);
+        Assert.DoesNotContain("<quick-replies>", replyText, StringComparison.Ordinal);
+        using var payload = TestFactory.GetLastReplyPayload(handler);
+        var items = payload!.RootElement.GetProperty("messages")[0].GetProperty("quickReply").GetProperty("items");
+        Assert.Equal(3, items.GetArrayLength());
+    }
+
+    [Fact]
+    public async Task TextMessageHandler_MalformedQuickReplyMetadata_DoesNotBreakReply()
+    {
+        var config = TestFactory.BuildConfig();
+        var ai = new FakeAiService
+        {
+            OnTextAsync = (msg, key, ct, enableQuickReplies) =>
+                Task.FromResult("主回覆\n\n<quick-replies>[\"分析文件\",</quick-replies>")
+        };
+        var handler = new RecordingHttpMessageHandler((request, ct) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)));
+        var textHandler = TestFactory.CreateTextHandler(config, ai, handler);
+
+        var evt = BuildTextEvent("user", "你好");
+        await textHandler.HandleAsync(evt, "https://unit.test", CancellationToken.None);
+
+        var replyText = TestFactory.GetLastReplyText(handler);
+        Assert.Equal("主回覆", replyText);
+        using var payload = TestFactory.GetLastReplyPayload(handler);
+        Assert.False(payload!.RootElement.GetProperty("messages")[0].TryGetProperty("quickReply", out _));
     }
 
     [Fact]
@@ -352,7 +404,7 @@ public class CharacterizationTests
         var config = TestFactory.BuildConfig();
         var ai = new FakeAiService
         {
-            OnTextAsync = (msg, key, ct) => throw new HttpRequestException("quota exceeded rpd daily", null, HttpStatusCode.TooManyRequests)
+            OnTextAsync = (msg, key, ct, enableQuickReplies) => throw new HttpRequestException("quota exceeded rpd daily", null, HttpStatusCode.TooManyRequests)
         };
         var handler = new RecordingHttpMessageHandler((request, ct) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)));
         var textHandler = TestFactory.CreateTextHandler(config, ai, handler);
@@ -371,7 +423,7 @@ public class CharacterizationTests
         var config = TestFactory.BuildConfig();
         var ai = new FakeAiService
         {
-            OnTextAsync = (msg, key, ct) => throw new HttpRequestException("rate limit temporary", null, HttpStatusCode.TooManyRequests)
+            OnTextAsync = (msg, key, ct, enableQuickReplies) => throw new HttpRequestException("rate limit temporary", null, HttpStatusCode.TooManyRequests)
         };
         var handler = new RecordingHttpMessageHandler((request, ct) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)));
         var backoff = new Ai429BackoffService();
@@ -395,7 +447,7 @@ public class CharacterizationTests
         var config = TestFactory.BuildConfig();
         var ai = new FakeAiService
         {
-            OnTextAsync = (msg, key, ct) => Task.FromResult("快取測試回覆")
+            OnTextAsync = (msg, key, ct, enableQuickReplies) => Task.FromResult("快取測試回覆")
         };
         var handler = new RecordingHttpMessageHandler((request, ct) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)));
         var textHandler = TestFactory.CreateTextHandler(config, ai, handler);
@@ -417,7 +469,7 @@ public class CharacterizationTests
 
         var ai = new FakeAiService
         {
-            OnTextAsync = async (msg, key, ct) =>
+            OnTextAsync = async (msg, key, ct, enableQuickReplies) =>
             {
                 firstCallStarted.TrySetResult(true);
                 return await gate.Task;

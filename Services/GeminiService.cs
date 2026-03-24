@@ -33,9 +33,9 @@ public class GeminiService : IAiService
         _logger = logger;
     }
 
-    public async Task<string> GetReplyAsync(string userMessage, string userKey, CancellationToken ct = default)
+    public async Task<string> GetReplyAsync(string userMessage, string userKey, CancellationToken ct = default, bool enableQuickReplies = false)
     {
-        return await GetReplyFromTextPromptAsync(userMessage, userKey, "text", ct);
+        return await GetReplyFromTextPromptAsync(userMessage, userKey, "text", ct, enableQuickReplies);
     }
 
     public async Task<string> GetReplyFromImageAsync(byte[] imageBytes, string mimeType, string userPrompt, string userKey, CancellationToken ct = default)
@@ -70,7 +70,7 @@ public class GeminiService : IAiService
         };
 
         var contents = history.Append(imagePart).ToArray();
-        var payload = BuildPayload(contents);
+        var payload = BuildPayload(contents, enableQuickReplies: false);
 
         var text = await SendWithRetryAsync(payload, "image", ct);
         var userInput = string.IsNullOrWhiteSpace(userPrompt)
@@ -98,15 +98,15 @@ MIME：{mimeType}
 {clipped}
 """;
 
-        return GetReplyFromTextPromptAsync(prompt, userKey, "document", ct);
+        return GetReplyFromTextPromptAsync(prompt, userKey, "document", ct, enableQuickReplies: false);
     }
 
-    private object BuildPayload(object contents) => new
+    private object BuildPayload(object contents, bool enableQuickReplies) => new
     {
         contents,
         systemInstruction = new
         {
-            parts = new[] { new { text = ButlerPrompt } }
+            parts = new[] { new { text = BuildSystemPrompt(enableQuickReplies) } }
         },
         generationConfig = new { maxOutputTokens = _maxOutputTokens }
     };
@@ -195,7 +195,7 @@ MIME：{mimeType}
         throw new InvalidOperationException("Gemini API call failed without a captured exception.");
     }
 
-    private async Task<string> GetReplyFromTextPromptAsync(string prompt, string userKey, string requestType, CancellationToken ct)
+    private async Task<string> GetReplyFromTextPromptAsync(string prompt, string userKey, string requestType, CancellationToken ct, bool enableQuickReplies)
     {
         var history = _history.GetHistory(userKey);
         var contents = history
@@ -211,10 +211,19 @@ MIME：{mimeType}
             })
             .ToArray();
 
-        var payload = BuildPayload(contents);
+        var payload = BuildPayload(contents, enableQuickReplies);
         var text = await SendWithRetryAsync(payload, requestType, ct);
-        _history.Append(userKey, prompt, text);
+        var parsed = QuickReplySuggestionParser.Parse(text);
+        _history.Append(userKey, prompt, parsed.MainText);
         return text;
+    }
+
+    private static string BuildSystemPrompt(bool enableQuickReplies)
+    {
+        if (!enableQuickReplies)
+            return ButlerPrompt;
+
+        return ButlerPrompt + "\n回答結束後，若適合，可在回覆最後附上唯一格式：\\n\\n<quick-replies>[\"選項1\",\"選項2\"]</quick-replies>。最多 3 個選項，需短、自然、可直接點擊送出；若不適合提供，就不要附加任何 quick reply 區塊。";
     }
 
     private IEnumerable<GeminiAttempt> BuildAttempts()

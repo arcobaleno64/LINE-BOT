@@ -21,9 +21,9 @@ public class FailoverAiService : IAiService
             throw new InvalidOperationException("No AI providers are configured. Please set at least one provider API key.");
     }
 
-    public Task<string> GetReplyAsync(string userMessage, string userKey, CancellationToken ct = default)
+    public Task<string> GetReplyAsync(string userMessage, string userKey, CancellationToken ct = default, bool enableQuickReplies = false)
         => ExecuteWithFailoverAsync(
-            provider => provider.Service.GetReplyAsync(userMessage, userKey, ct),
+            provider => provider.Service.GetReplyAsync(userMessage, userKey, ct, enableQuickReplies),
             "text");
 
     public Task<string> GetReplyFromImageAsync(byte[] imageBytes, string mimeType, string userPrompt, string userKey, CancellationToken ct = default)

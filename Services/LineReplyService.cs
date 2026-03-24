@@ -29,19 +29,25 @@ public class LineReplyService
     /// <summary>回覆文字訊息</summary>
     public async Task ReplyTextAsync(string replyToken, string text, CancellationToken ct = default)
     {
-        await ReplyTextAsync(replyToken, text, logContext: null, ct);
+        await ReplyTextAsync(replyToken, text, quickReplies: null, logContext: null, ct);
     }
 
     /// <summary>回覆文字訊息並附帶最小排障關聯欄位</summary>
     public async Task ReplyTextAsync(string replyToken, string text, WebhookLogContext? logContext, CancellationToken ct = default)
     {
+        await ReplyTextAsync(replyToken, text, quickReplies: null, logContext, ct);
+    }
+
+    public async Task ReplyTextAsync(string replyToken, string text, IReadOnlyList<string>? quickReplies, WebhookLogContext? logContext, CancellationToken ct = default)
+    {
         var chunks = SplitIntoLineMessages(text);
         var replyFailedRecorded = false;
+        var quickReplyItems = BuildQuickReplyItems(quickReplies);
 
         var payload = new
         {
             replyToken,
-            messages = chunks.Select(x => new { type = "text", text = x }).ToArray()
+            messages = chunks.Select((x, index) => BuildTextMessage(x, index == chunks.Count - 1 ? quickReplyItems : null)).ToArray()
         };
 
         var request = new HttpRequestMessage(HttpMethod.Post, ReplyUrl)
@@ -98,6 +104,51 @@ public class LineReplyService
 
             throw;
         }
+    }
+
+    private static object BuildTextMessage(string text, IReadOnlyList<object>? quickReplyItems)
+    {
+        if (quickReplyItems is { Count: > 0 })
+        {
+            return new
+            {
+                type = "text",
+                text,
+                quickReply = new
+                {
+                    items = quickReplyItems
+                }
+            };
+        }
+
+        return new
+        {
+            type = "text",
+            text
+        };
+    }
+
+    private static IReadOnlyList<object> BuildQuickReplyItems(IReadOnlyList<string>? quickReplies)
+    {
+        if (quickReplies is null || quickReplies.Count == 0)
+            return [];
+
+        return quickReplies
+            .Where(reply => !string.IsNullOrWhiteSpace(reply))
+            .Select(reply => reply.Trim())
+            .Distinct(StringComparer.Ordinal)
+            .Take(3)
+            .Select(reply => (object)new
+            {
+                type = "action",
+                action = new
+                {
+                    type = "message",
+                    label = reply,
+                    text = reply
+                }
+            })
+            .ToArray();
     }
 
     private static IReadOnlyList<string> SplitIntoLineMessages(string text)
