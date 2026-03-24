@@ -45,6 +45,15 @@ public class FailoverAiService : IAiService
             try
             {
                 var reply = await call(provider);
+                if (IsImageCapabilityPlaceholder(provider.Name, requestType, reply))
+                {
+                    _logger.LogWarning(
+                        "Provider {Provider} does not provide real image analysis for {RequestType}; trying next provider.",
+                        provider.Name,
+                        requestType);
+                    continue;
+                }
+
                 _logger.LogInformation("AI request ({RequestType}) served by provider {Provider}", requestType, provider.Name);
                 return reply;
             }
@@ -162,6 +171,24 @@ public class FailoverAiService : IAiService
             || normalized.Contains("daily")
             || normalized.Contains("limit exceeded")
             || normalized.Contains("exceeded your current quota");
+    }
+
+    private static bool IsImageCapabilityPlaceholder(string providerName, string requestType, string reply)
+    {
+        if (!requestType.Equals("image", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        if (!providerName.Equals("OpenAI", StringComparison.OrdinalIgnoreCase)
+            && !providerName.Equals("Claude", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        if (string.IsNullOrWhiteSpace(reply))
+            return false;
+
+        var normalized = reply.ToLowerInvariant();
+        return normalized.Contains("未啟用圖片解析", StringComparison.Ordinal)
+            || normalized.Contains("改用 gemini", StringComparison.Ordinal)
+            || normalized.Contains("補充文字描述", StringComparison.Ordinal);
     }
 
     private sealed record ProviderEntry(string Name, IAiService Service);
