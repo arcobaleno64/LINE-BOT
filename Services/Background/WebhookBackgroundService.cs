@@ -34,12 +34,14 @@ public sealed class WebhookBackgroundService : BackgroundService
                 }
                 catch (Exception ex)
                 {
+                    var statusCode = SensitiveLogHelpers.GetStatusCode(ex);
                     _logger.LogError(
-                        ex,
-                        "Error handling event {EventId} from {SourceType} with message type {MessageType}",
+                        "Error handling event {EventId} from {SourceType} with message type {MessageType}. StatusCode={StatusCode} ExceptionType={ExceptionType}",
                         item.EventId,
                         item.SourceType,
-                        item.MessageType);
+                        item.MessageType,
+                        statusCode,
+                        ex.GetType().Name);
                 }
             }
         }

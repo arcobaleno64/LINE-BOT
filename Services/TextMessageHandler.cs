@@ -149,15 +149,18 @@ public class TextMessageHandler : ITextMessageHandler
         }
         catch (Exception ex) when (IsTooManyRequests(ex))
         {
+            var isQuotaExhausted = IsQuotaExhausted(ex);
             _metrics.RecordAiTooManyRequests(HandlerType);
             _logger.LogDebug(
-                ex,
-                "AI rate limit details. EventId={EventId} HandlerType={HandlerType} SourceType={SourceType} MessageType={MessageType}",
+                "AI rate limit details. EventId={EventId} HandlerType={HandlerType} SourceType={SourceType} MessageType={MessageType} UserKeyFingerprint={UserKeyFingerprint} StatusCode={StatusCode} IsQuotaExhausted={IsQuotaExhausted}",
                 logContext.EventId,
                 logContext.HandlerType,
                 logContext.SourceType,
-                logContext.MessageType);
-            if (IsQuotaExhausted(ex))
+                logContext.MessageType,
+                logContext.UserKeyFingerprint,
+                SensitiveLogHelpers.GetStatusCode(ex),
+                isQuotaExhausted);
+            if (isQuotaExhausted)
             {
                 _metrics.RecordAiQuotaExhausted(HandlerType);
                 var quotaCooldown = GetIntConfig("App:AiQuotaCooldownSeconds", 300);
@@ -247,15 +250,18 @@ public class TextMessageHandler : ITextMessageHandler
             }
             catch (Exception ex) when (IsTooManyRequests(ex))
             {
+                var isQuotaExhausted = IsQuotaExhausted(ex);
                 _metrics.RecordAiTooManyRequests(HandlerType);
                 _logger.LogDebug(
-                    ex,
-                    "AI rate limit details. EventId={EventId} HandlerType={HandlerType} SourceType={SourceType} MessageType={MessageType}",
+                    "AI rate limit details. EventId={EventId} HandlerType={HandlerType} SourceType={SourceType} MessageType={MessageType} UserKeyFingerprint={UserKeyFingerprint} StatusCode={StatusCode} IsQuotaExhausted={IsQuotaExhausted}",
                     logContext?.EventId,
                     HandlerType,
                     logContext?.SourceType,
-                    logContext?.MessageType);
-                if (IsQuotaExhausted(ex))
+                    logContext?.MessageType,
+                    logContext?.UserKeyFingerprint ?? ObservabilityKeyFingerprint.From(userKey),
+                    SensitiveLogHelpers.GetStatusCode(ex),
+                    isQuotaExhausted);
+                if (isQuotaExhausted)
                 {
                     _metrics.RecordAiQuotaExhausted(HandlerType);
                     var quotaCooldown = GetIntConfig("App:AiQuotaCooldownSeconds", 300);

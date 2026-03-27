@@ -59,7 +59,15 @@ public sealed class DocumentGroundingService
             }
             catch (Exception ex)
             {
-                _logger?.LogWarning(ex, "Document semantic selection failed. Falling back to lexical selection.");
+                _logger?.LogWarning(
+                    "Document semantic selection failed. Falling back to lexical selection. RequestType={RequestType} Mode={Mode} ChunkCount={ChunkCount} HasSemanticSelector={HasSemanticSelector} HasFallback={HasFallback} StatusCode={StatusCode} ExceptionType={ExceptionType}",
+                    "document",
+                    mode,
+                    chunks.Count,
+                    _semanticSelector is not null,
+                    true,
+                    SensitiveLogHelpers.GetStatusCode(ex),
+                    SensitiveLogHelpers.GetFailureType(ex));
             }
         }
 

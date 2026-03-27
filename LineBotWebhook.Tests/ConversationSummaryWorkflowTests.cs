@@ -71,7 +71,7 @@ public class ConversationSummaryWorkflowTests
         var logger = new TestLogger<ConversationSummaryWorker>();
         var generator = new FakeConversationSummaryGenerator
         {
-            OnGenerateAsync = (existingSummary, pendingMessages, ct) => throw new InvalidOperationException("boom")
+            OnGenerateAsync = (existingSummary, pendingMessages, ct) => throw new HttpRequestException("raw-summary=secret raw-user-text=u3", null, System.Net.HttpStatusCode.BadGateway)
         };
 
         history.Append("user-1", "u1", "a1");
@@ -100,7 +100,16 @@ public class ConversationSummaryWorkflowTests
         var retriggered = history.GetSessionSnapshot("user-1");
         Assert.NotNull(retriggered);
         Assert.True(queue.GetSnapshot().TotalEnqueued >= 2);
-        Assert.Contains(logger.Entries, entry => entry.Level == LogLevel.Error && entry.Message.Contains("Conversation summary failed", StringComparison.Ordinal));
+        var errors = logger.Entries.Where(entry => entry.Level == LogLevel.Error && entry.Message.Contains("Conversation summary failed", StringComparison.Ordinal)).ToArray();
+        Assert.NotEmpty(errors);
+        foreach (var error in errors)
+        {
+            Assert.Null(error.Exception);
+            Assert.Equal(502, error.Properties["StatusCode"]);
+            Assert.Equal("HttpRequestException", error.Properties["ExceptionType"]);
+            Assert.DoesNotContain("raw-summary=secret", error.Message, StringComparison.Ordinal);
+            Assert.DoesNotContain("raw-user-text=u3", error.Message, StringComparison.Ordinal);
+        }
     }
 
     [Fact]

@@ -48,7 +48,7 @@ public class WebhookBackgroundServiceTests
         {
             callCount++;
             if (callCount == 1)
-                throw new InvalidOperationException("boom");
+                throw new HttpRequestException("replyToken=raw-token userText=secret-body", null, System.Net.HttpStatusCode.BadGateway);
 
             secondDispatch.TrySetResult(true);
             return Task.CompletedTask;
@@ -66,9 +66,14 @@ public class WebhookBackgroundServiceTests
 
         Assert.Same(secondDispatch.Task, completed);
         var errorLog = Assert.Single(logger.Entries, x => x.Level == LogLevel.Error && x.Message.Contains("Error handling event", StringComparison.Ordinal));
+        Assert.Null(errorLog.Exception);
         Assert.Equal("evt-fail", errorLog.Properties["EventId"]);
         Assert.Equal("user", errorLog.Properties["SourceType"]);
         Assert.Equal("text", errorLog.Properties["MessageType"]);
+        Assert.Equal(502, errorLog.Properties["StatusCode"]);
+        Assert.Equal("HttpRequestException", errorLog.Properties["ExceptionType"]);
+        Assert.DoesNotContain("raw-token", errorLog.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("secret-body", errorLog.Message, StringComparison.Ordinal);
         Assert.Equal(2, dispatcher.DispatchCalls);
     }
 

@@ -48,12 +48,14 @@ public sealed class ConversationSummaryWorker : BackgroundService
                 catch (Exception ex)
                 {
                     _history.ApplySummaryFailure(item.UserKey);
+                    var statusCode = SensitiveLogHelpers.GetStatusCode(ex);
                     _logger.LogError(
-                        ex,
-                        "Conversation summary failed. UserKeyFingerprint={UserKeyFingerprint} PendingCount={PendingCount} MessageCount={MessageCount}",
+                        "Conversation summary failed. UserKeyFingerprint={UserKeyFingerprint} PendingCount={PendingCount} MessageCount={MessageCount} StatusCode={StatusCode} ExceptionType={ExceptionType}",
                         item.UserKeyFingerprint,
                         item.PendingCount,
-                        item.MessageCount);
+                        item.MessageCount,
+                        statusCode,
+                        ex.GetType().Name);
                 }
             }
         }

@@ -178,6 +178,48 @@ public class FailoverAiServiceTests
     }
 
     [Fact]
+    public async Task ProviderFailoverWarning_Log_DoesNotLeakRawProviderPayload()
+    {
+        var requests = new List<string>();
+        var logger = new TestLogger<FailoverAiService>();
+        var handler = CreateRoutingHandler(requests, request =>
+        {
+            var uri = request.RequestUri!.ToString();
+            return uri.Contains("generativelanguage.googleapis.com", StringComparison.Ordinal)
+                ? BuildGeminiError(HttpStatusCode.ServiceUnavailable, """{"error":{"message":"resource_exhausted apiKey=secret-key fileToken=file-token-123"}}""")
+                : uri.Contains("api.openai.com", StringComparison.Ordinal)
+                    ? BuildOpenAiSuccess("OpenAI 接手成功")
+                    : throw new InvalidOperationException($"Unexpected uri: {uri}");
+        });
+
+        var service = CreateService(
+            handler,
+            new Dictionary<string, string?>
+            {
+                ["Ai:Provider"] = "Gemini",
+                ["Ai:FallbackProvider"] = "OpenAI",
+                ["Ai:Gemini:ApiKey"] = "primary-key",
+                ["Ai:Gemini:SecondaryApiKey"] = "secondary-key",
+                ["Ai:Gemini:Model"] = "gemini-2.5-flash",
+                ["Ai:Gemini:FallbackModel"] = "gemini-2.0-flash-lite",
+                ["Ai:OpenAI:ApiKey"] = "openai-key"
+            },
+            logger);
+
+        var reply = await service.GetReplyAsync("你好", "u1", CancellationToken.None);
+
+        Assert.Equal("OpenAI 接手成功", reply);
+        var warning = Assert.Single(logger.Entries, entry => entry.Level == LogLevel.Warning && entry.Message.Contains("trying next provider", StringComparison.Ordinal));
+        Assert.Null(warning.Exception);
+        Assert.Equal("Gemini", warning.Properties["Provider"]);
+        Assert.Equal("text", warning.Properties["RequestType"]);
+        Assert.Equal(503, warning.Properties["StatusCode"]);
+        Assert.Equal(true, warning.Properties["IsQuotaExhausted"]);
+        Assert.DoesNotContain("secret-key", warning.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("file-token-123", warning.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task ImagePath_PlaceholderResponses_AreNotTreatedAsSuccessfulAnalysis()
     {
         var requests = new List<string>();

@@ -61,6 +61,8 @@ public class OperationalObservabilityTests
         var warning = Assert.Single(logger.Entries, x => x.Level == LogLevel.Warning && x.Message.Contains("Invalid LINE signature", StringComparison.Ordinal));
         Assert.Equal(true, warning.Properties["HasSignatureHeader"]);
         Assert.Equal(Encoding.UTF8.GetByteCount(body), warning.Properties["BodyLength"]);
+        Assert.DoesNotContain(body, warning.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("bad", warning.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -325,6 +327,35 @@ public class OperationalObservabilityTests
     }
 
     [Fact]
+    public async Task TextRateLimitDebug_Log_DoesNotLeakRawUserTextOrStableIds()
+    {
+        var config = TestFactory.BuildConfig();
+        var metrics = new FakeWebhookMetrics();
+        var logger = new TestLogger<TextMessageHandler>();
+        var ai = new FakeAiService
+        {
+            OnTextAsync = (msg, key, ct, enableQuickReplies) =>
+                throw new HttpRequestException("rate limit temporary raw-user-text=u1:u1 token-like-abc", null, HttpStatusCode.TooManyRequests)
+        };
+        var handler = new RecordingHttpMessageHandler((request, ct) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)));
+        var textHandler = TestFactory.CreateTextHandler(config, ai, handler, metrics: metrics, logger: logger);
+        var evt = BuildTextEvent("user", "raw-user-text");
+        evt.WebhookEventId = "evt-debug-text";
+
+        await textHandler.HandleAsync(evt, "https://unit.test", CancellationToken.None);
+
+        var debug = Assert.Single(logger.Entries, x => x.Level == LogLevel.Debug && x.Message.Contains("AI rate limit details", StringComparison.Ordinal));
+        Assert.Null(debug.Exception);
+        Assert.Equal("evt-debug-text", debug.Properties["EventId"]);
+        Assert.Equal(429, debug.Properties["StatusCode"]);
+        Assert.Equal(false, debug.Properties["IsQuotaExhausted"]);
+        Assert.Equal(ObservabilityKeyFingerprint.From("u1:u1"), debug.Properties["UserKeyFingerprint"]);
+        Assert.DoesNotContain("raw-user-text", debug.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("u1:u1", debug.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("token-like-abc", debug.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task AiQuotaWarning_Log_UsesStandardizedFields_WithoutExceptionBody()
     {
         var config = TestFactory.BuildConfig();
@@ -346,6 +377,129 @@ public class OperationalObservabilityTests
         Assert.Equal("evt-quota", warning.Properties["EventId"]);
         Assert.Equal(true, warning.Properties["IsQuotaExhausted"]);
         Assert.DoesNotContain("quota exceeded rpd daily", warning.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ImageRateLimitDebug_Log_DoesNotLeakStableIds()
+    {
+        var config = TestFactory.BuildConfig();
+        var metrics = new FakeWebhookMetrics();
+        var logger = new TestLogger<ImageMessageHandler>();
+        var ai = new FakeAiService
+        {
+            OnImageAsync = (bytes, mime, prompt, key, ct) =>
+                throw new HttpRequestException("rate limit image raw-user=u1:u1", null, HttpStatusCode.TooManyRequests)
+        };
+        var handler = new RecordingHttpMessageHandler((request, ct) =>
+        {
+            if (request.RequestUri!.ToString().Contains("api-data.line.me", StringComparison.Ordinal))
+            {
+                var response = new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new ByteArrayContent([1, 2, 3])
+                };
+                response.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/png");
+                return Task.FromResult(response);
+            }
+
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK));
+        });
+        var imageHandler = TestFactory.CreateImageHandler(config, ai, handler, metrics: metrics, logger: logger);
+        var evt = new LineEvent
+        {
+            Type = "message",
+            ReplyToken = "r1",
+            WebhookEventId = "evt-debug-image",
+            Source = new LineSource { Type = "user", UserId = "u1" },
+            Message = new LineMessage { Id = "m1", Type = "image" }
+        };
+
+        await imageHandler.HandleAsync(evt, "https://unit.test", CancellationToken.None);
+
+        var debug = Assert.Single(logger.Entries, x => x.Level == LogLevel.Debug && x.Message.Contains("AI rate limit details", StringComparison.Ordinal));
+        Assert.Null(debug.Exception);
+        Assert.Equal("evt-debug-image", debug.Properties["EventId"]);
+        Assert.Equal(429, debug.Properties["StatusCode"]);
+        Assert.Equal(ObservabilityKeyFingerprint.From("u1:u1"), debug.Properties["UserKeyFingerprint"]);
+        Assert.DoesNotContain("u1:u1", debug.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task FileRateLimitDebug_Log_DoesNotLeakExtractedTextOrTokenLikeValues()
+    {
+        var config = TestFactory.BuildConfig();
+        var metrics = new FakeWebhookMetrics();
+        var logger = new TestLogger<FileMessageHandler>();
+        var ai = new FakeAiService
+        {
+            OnFileAsync = (name, mime, text, prompt, key, ct) =>
+                throw new HttpRequestException("rate limit file-token-123 extracted-secret-body", null, HttpStatusCode.TooManyRequests)
+        };
+        var handler = new RecordingHttpMessageHandler((request, ct) =>
+        {
+            if (request.RequestUri!.ToString().Contains("api-data.line.me", StringComparison.Ordinal))
+            {
+                var response = new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new ByteArrayContent(Encoding.UTF8.GetBytes("extracted-secret-body"))
+                };
+                response.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("text/plain");
+                return Task.FromResult(response);
+            }
+
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK));
+        });
+        var fileHandler = TestFactory.CreateFileHandler(config, ai, handler, metrics: metrics, logger: logger);
+        var evt = new LineEvent
+        {
+            Type = "message",
+            ReplyToken = "r1",
+            WebhookEventId = "evt-debug-file",
+            Source = new LineSource { Type = "user", UserId = "u1" },
+            Message = new LineMessage { Id = "m1", Type = "file", FileName = "a.txt" }
+        };
+
+        await fileHandler.HandleAsync(evt, "https://unit.test", CancellationToken.None);
+
+        var debug = Assert.Single(logger.Entries, x => x.Level == LogLevel.Debug && x.Message.Contains("AI rate limit details", StringComparison.Ordinal));
+        Assert.Null(debug.Exception);
+        Assert.Equal("evt-debug-file", debug.Properties["EventId"]);
+        Assert.Equal(429, debug.Properties["StatusCode"]);
+        Assert.Equal(ObservabilityKeyFingerprint.From("u1:u1"), debug.Properties["UserKeyFingerprint"]);
+        Assert.DoesNotContain("extracted-secret-body", debug.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("file-token-123", debug.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void DocumentSemanticFallbackWarning_DoesNotLeakPromptOrChunkText()
+    {
+        var logger = new TestLogger<DocumentGroundingService>();
+        var semantic = new FakeSemanticChunkSelector
+        {
+            OnSelectAsync = (chunks, prompt, ct) =>
+                throw new HttpRequestException($"semantic failure prompt={prompt} raw-chunk={chunks[0].Text} token-like-xyz", null, HttpStatusCode.BadRequest)
+        };
+        var service = new DocumentGroundingService(
+            new DocumentChunker(),
+            new DocumentChunkSelector(),
+            semantic,
+            logger);
+
+        var longText = string.Join("\n\n", Enumerable.Repeat("第一段敏感片段 " + new string('A', 400), 6));
+        var result = service.Prepare("a.txt", "text/plain", longText, "截止日是什麼？");
+
+        Assert.NotEmpty(result.SelectedChunks);
+        var warning = Assert.Single(logger.Entries, x => x.Level == LogLevel.Warning && x.Message.Contains("Document semantic selection failed", StringComparison.Ordinal));
+        Assert.Null(warning.Exception);
+        Assert.Equal("document", warning.Properties["RequestType"]);
+        Assert.Equal(DocumentTaskMode.QuestionAnswer, warning.Properties["Mode"]);
+        Assert.Equal(true, warning.Properties["HasSemanticSelector"]);
+        Assert.Equal(true, warning.Properties["HasFallback"]);
+        Assert.Equal(400, warning.Properties["StatusCode"]);
+        Assert.Equal("HttpRequestException", warning.Properties["ExceptionType"]);
+        Assert.DoesNotContain("截止日是什麼", warning.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("第一段敏感片段", warning.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("token-like-xyz", warning.Message, StringComparison.Ordinal);
     }
 
     [Fact]
