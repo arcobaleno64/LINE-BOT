@@ -63,8 +63,25 @@ public class LineWebhookController(
         }
 
         var publicBaseUrl = _publicBaseUrlResolver.Resolve(Request);
+        var enqueueSuccessCount = 0;
+        var enqueueDroppedCount = 0;
         foreach (var evt in webhook.Events)
-            _backgroundQueue.TryEnqueue(new WebhookQueueItem(evt, publicBaseUrl));
+        {
+            if (_backgroundQueue.TryEnqueue(new WebhookQueueItem(evt, publicBaseUrl)))
+                enqueueSuccessCount++;
+            else
+                enqueueDroppedCount++;
+        }
+
+        if (enqueueDroppedCount > 0)
+        {
+            _logger.LogWarning(
+                "Webhook enqueue dropped events. EventCount={EventCount} EnqueuedCount={EnqueuedCount} DroppedCount={DroppedCount} FirstEventId={FirstEventId}",
+                webhook.Events.Count,
+                enqueueSuccessCount,
+                enqueueDroppedCount,
+                firstEventId);
+        }
 
         return Ok();
     }
