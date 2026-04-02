@@ -7,15 +7,18 @@ public sealed class ConversationSummaryGenerator : IConversationSummaryGenerator
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IConfiguration _config;
     private readonly ILoggerFactory _loggerFactory;
+    private readonly PersonaContext _persona;
 
     public ConversationSummaryGenerator(
         IHttpClientFactory httpClientFactory,
         IConfiguration config,
-        ILoggerFactory loggerFactory)
+        ILoggerFactory loggerFactory,
+        PersonaContext persona)
     {
         _httpClientFactory = httpClientFactory;
         _config = config;
         _loggerFactory = loggerFactory;
+        _persona = persona;
     }
 
     public async Task<string> GenerateAsync(
@@ -29,6 +32,7 @@ public sealed class ConversationSummaryGenerator : IConversationSummaryGenerator
             _config,
             new ConversationHistoryService(maxRounds: 1, idleMinutes: 1),
             _loggerFactory,
+            _persona,
             _loggerFactory.CreateLogger<FailoverAiService>());
 
         return await ai.GetReplyAsync(prompt, $"conversation-summary:{Guid.NewGuid():N}", ct);

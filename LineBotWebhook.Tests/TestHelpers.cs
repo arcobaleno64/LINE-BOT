@@ -37,6 +37,9 @@ internal sealed class FakeAiService : IAiService
     public Func<string, string, string, string, string, CancellationToken, Task<string>> OnFileAsync { get; set; }
         = (fileName, mime, text, prompt, key, ct) => Task.FromResult("FILE-OK");
 
+    public Func<string, CancellationToken, Task<string>> OnStatelessAsync { get; set; }
+        = (prompt, ct) => Task.FromResult("STATELESS-OK");
+
     public Task<string> GetReplyAsync(string userMessage, string userKey, CancellationToken ct = default, bool enableQuickReplies = false)
     {
         TextCalls++;
@@ -53,6 +56,11 @@ internal sealed class FakeAiService : IAiService
     {
         FileCalls++;
         return OnFileAsync(fileName, mimeType, extractedText, userPrompt, userKey, ct);
+    }
+
+    public Task<string> GenerateStatelessReplyAsync(string prompt, CancellationToken ct = default)
+    {
+        return OnStatelessAsync(prompt, ct);
     }
 }
 
