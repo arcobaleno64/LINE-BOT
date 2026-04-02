@@ -20,3 +20,8 @@ logs/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Local assistant/workspace artifacts
+.codex-origin-main/
+.continue/
+nul
