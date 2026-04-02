@@ -225,6 +225,67 @@ public class OperationalObservabilityTests
     }
 
     [Fact]
+    public async Task Webhook_WhenQueuePartiallyDropsEvents_StillReturns200_AndLogsAccurateDropSummary()
+    {
+        const string signature = "sig-partial";
+        var queue = new PartialAcceptWebhookQueue(successCountLimit: 1);
+        var metrics = new FakeWebhookMetrics();
+        var logger = new TestLogger<LineWebhookController>();
+
+        var firstEvent = BuildTextEvent("user", "raw-user-text-1");
+        firstEvent.WebhookEventId = "evt-first";
+        firstEvent.ReplyToken = "raw-reply-token-1";
+        firstEvent.Source!.UserId = "u-stable-id-1";
+
+        var secondEvent = BuildTextEvent("user", "raw-user-text-2");
+        secondEvent.WebhookEventId = "evt-second";
+        secondEvent.ReplyToken = "raw-reply-token-2";
+        secondEvent.Source!.UserId = "u-stable-id-2";
+
+        var thirdEvent = BuildTextEvent("user", "raw-user-text-3");
+        thirdEvent.WebhookEventId = "evt-third";
+        thirdEvent.ReplyToken = "raw-reply-token-3";
+        thirdEvent.Source!.UserId = "u-stable-id-3";
+
+        var body = JsonSerializer.Serialize(new LineWebhookBody
+        {
+            Destination = "dest",
+            Events = [firstEvent, secondEvent, thirdEvent]
+        });
+
+        var controller = new LineWebhookController(
+            signatureVerifier: new AlwaysTrueSignatureVerifier(),
+            publicBaseUrlResolver: new PublicBaseUrlResolver(TestFactory.BuildConfig()),
+            backgroundQueue: queue,
+            metrics: metrics,
+            logger: logger)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestFactory.CreateHttpContext(body, signature)
+            }
+        };
+
+        var result = await controller.Webhook(CancellationToken.None);
+
+        Assert.IsType<OkResult>(result);
+        var warning = Assert.Single(
+            logger.Entries,
+            x => x.Level == LogLevel.Warning && x.Message.Contains("Webhook enqueue dropped events", StringComparison.Ordinal));
+
+        Assert.Equal(3, warning.Properties["EventCount"]);
+        Assert.Equal(1, warning.Properties["EnqueuedCount"]);
+        Assert.Equal(2, warning.Properties["DroppedCount"]);
+        Assert.Equal("evt-first", warning.Properties["FirstEventId"]);
+
+        Assert.DoesNotContain(body, warning.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(signature, warning.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("raw-reply-token", warning.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("raw-user-text", warning.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("u-stable-id", warning.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Dispatcher_UnsupportedMessage_RecordsUnsupportedMetric()
     {
         var config = TestFactory.BuildConfig();
@@ -657,5 +718,44 @@ public class OperationalObservabilityTests
     private sealed class AlwaysTrueSignatureVerifier : IWebhookSignatureVerifier
     {
         public bool Verify(string body, string signature) => true;
+    }
+
+    private sealed class PartialAcceptWebhookQueue : IWebhookBackgroundQueue
+    {
+        private readonly int _successCountLimit;
+        private int _attempts;
+        private int _enqueued;
+        private int _dropped;
+
+        public PartialAcceptWebhookQueue(int successCountLimit)
+        {
+            _successCountLimit = successCountLimit;
+        }
+
+        public bool TryEnqueue(WebhookQueueItem item)
+        {
+            _attempts++;
+            if (_attempts <= _successCountLimit)
+            {
+                _enqueued++;
+                return true;
+            }
+
+            _dropped++;
+            return false;
+        }
+
+        public async IAsyncEnumerable<WebhookQueueItem> DequeueAllAsync([System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
+
+        public WebhookQueueSnapshot GetSnapshot()
+            => new(0, 256, _enqueued, _dropped, 0);
+
+        public void Complete()
+        {
+        }
     }
 }
