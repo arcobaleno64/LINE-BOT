@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text;
+using System.Text.Json;
 using LineBotWebhook.Controllers;
 using LineBotWebhook.Models;
 using LineBotWebhook.Services;
@@ -145,6 +146,82 @@ public class OperationalObservabilityTests
         var info = Assert.Single(logger.Entries, x => x.Level == LogLevel.Information && x.Message.Contains("Received LINE webhook with", StringComparison.Ordinal));
         Assert.Equal(1, info.Properties["EventCount"]);
         Assert.False(info.Properties.ContainsKey("FirstEventId"));
+    }
+
+    [Fact]
+    public async Task Webhook_WhenQueueDropsEvents_StillReturns200_AndLogsDroppedSummary()
+    {
+        var queue = new FakeWebhookBackgroundQueue { TryEnqueueResult = false };
+        var metrics = new FakeWebhookMetrics();
+        var logger = new TestLogger<LineWebhookController>();
+        var firstEvent = BuildTextEvent("user", "raw-user-text");
+        firstEvent.WebhookEventId = "evt-first";
+        var secondEvent = BuildTextEvent("user", "second-text");
+        secondEvent.WebhookEventId = "evt-second";
+        var body = JsonSerializer.Serialize(new LineWebhookBody
+        {
+            Destination = "dest",
+            Events = [firstEvent, secondEvent]
+        });
+
+        var controller = new LineWebhookController(
+            signatureVerifier: new AlwaysTrueSignatureVerifier(),
+            publicBaseUrlResolver: new PublicBaseUrlResolver(TestFactory.BuildConfig()),
+            backgroundQueue: queue,
+            metrics: metrics,
+            logger: logger)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestFactory.CreateHttpContext(body, "sig")
+            }
+        };
+
+        var result = await controller.Webhook(CancellationToken.None);
+
+        Assert.IsType<OkResult>(result);
+        var warning = Assert.Single(
+            logger.Entries,
+            x => x.Level == LogLevel.Warning && x.Message.Contains("Webhook enqueue dropped events", StringComparison.Ordinal));
+        Assert.Equal(2, warning.Properties["EventCount"]);
+        Assert.Equal(2, warning.Properties["DroppedCount"]);
+        Assert.Equal("evt-first", warning.Properties["FirstEventId"]);
+        Assert.DoesNotContain(body, warning.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("sig", warning.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("reply-token", warning.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("raw-user-text", warning.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("u1", warning.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Webhook_WhenAllEventsEnqueued_DoesNotLogDroppedSummary()
+    {
+        var queue = new FakeWebhookBackgroundQueue { TryEnqueueResult = true };
+        var metrics = new FakeWebhookMetrics();
+        var logger = new TestLogger<LineWebhookController>();
+        var evt = BuildTextEvent("user", "hello");
+        evt.WebhookEventId = "evt-ok";
+        var body = TestFactory.BuildWebhookJson(evt);
+
+        var controller = new LineWebhookController(
+            signatureVerifier: new AlwaysTrueSignatureVerifier(),
+            publicBaseUrlResolver: new PublicBaseUrlResolver(TestFactory.BuildConfig()),
+            backgroundQueue: queue,
+            metrics: metrics,
+            logger: logger)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestFactory.CreateHttpContext(body)
+            }
+        };
+
+        var result = await controller.Webhook(CancellationToken.None);
+
+        Assert.IsType<OkResult>(result);
+        Assert.DoesNotContain(
+            logger.Entries,
+            x => x.Level == LogLevel.Warning && x.Message.Contains("Webhook enqueue dropped events", StringComparison.Ordinal));
     }
 
     [Fact]
