@@ -1,4 +1,6 @@
 using LineBotWebhook.Services;
+using LineBotWebhook.Services.Documents;
+using Microsoft.AspNetCore.Mvc;
 
 Environment.SetEnvironmentVariable("DOTNET_HOSTBUILDER__RELOADCONFIGONCHANGE", "false");
 Environment.SetEnvironmentVariable("ASPNETCORE_HOSTBUILDER__RELOADCONFIGONCHANGE", "false");
@@ -8,6 +10,11 @@ var builder = WebApplication.CreateBuilder(args);
 
 // ---------- DI: HttpClient ----------
 builder.Services.AddHttpClient();
+
+// ---------- DI: Persona Injection ----------
+var personaFile = Path.Combine(builder.Environment.ContentRootPath, "persona_baymax.txt");
+var personaText = File.Exists(personaFile) ? File.ReadAllText(personaFile) : "你是一位親切的管家，語氣溫暖有禮、回答精簡實用，必要時可條列重點。請全程使用繁體中文，並避免自稱是 AI。";
+builder.Services.AddSingleton(new PersonaContext(personaText));
 
 // ---------- DI: Conversation History ----------
 builder.Services.AddSingleton<IConversationSummaryQueue, ConversationSummaryQueue>();
@@ -28,6 +35,8 @@ builder.Services.AddSingleton<IAiService>(sp =>
         sp.GetRequiredService<IHttpClientFactory>(),
         sp.GetRequiredService<IConfiguration>(),
         sp.GetRequiredService<ConversationHistoryService>(),
+        sp.GetRequiredService<ILoggerFactory>(),
+        sp.GetRequiredService<PersonaContext>(),
         sp.GetRequiredService<ILoggerFactory>(),
         sp.GetRequiredService<ILogger<FailoverAiService>>()));
 

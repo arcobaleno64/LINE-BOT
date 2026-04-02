@@ -11,4 +11,7 @@ public interface IAiService
 
     /// <summary>依檔案內容（已抽出的文字）產生 AI 回覆</summary>
     Task<string> GetReplyFromDocumentAsync(string fileName, string mimeType, string extractedText, string userPrompt, string userKey, CancellationToken ct = default);
+
+    /// <summary>無狀態回覆（提供內部邏輯如摘要使用，不影響對話紀錄）</summary>
+    Task<string> GenerateStatelessReplyAsync(string prompt, CancellationToken ct = default);
 }
