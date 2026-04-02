@@ -32,6 +32,25 @@ public class LineReplyService
         await ReplyTextAsync(replyToken, text, quickReplies: null, logContext: null, ct);
     }
 
+    /// <summary>回覆 AI 文字訊息（會套用 LINE 純文字保護）</summary>
+    public Task ReplyAiTextAsync(string replyToken, string text, CancellationToken ct = default)
+    {
+        return ReplyAiTextAsync(replyToken, text, quickReplies: null, logContext: null, ct);
+    }
+
+    /// <summary>回覆 AI 文字訊息並附帶最小排障關聯欄位（會套用 LINE 純文字保護）</summary>
+    public Task ReplyAiTextAsync(string replyToken, string text, WebhookLogContext? logContext, CancellationToken ct = default)
+    {
+        return ReplyAiTextAsync(replyToken, text, quickReplies: null, logContext, ct);
+    }
+
+    /// <summary>回覆 AI 文字訊息並附 quick replies（會套用 LINE 純文字保護）</summary>
+    public Task ReplyAiTextAsync(string replyToken, string text, IReadOnlyList<string>? quickReplies, WebhookLogContext? logContext, CancellationToken ct = default)
+    {
+        var lineSafeText = LineReplyTextFormatter.SanitizeForLine(text);
+        return ReplyTextAsync(replyToken, lineSafeText, quickReplies, logContext, ct);
+    }
+
     /// <summary>回覆文字訊息並附帶最小排障關聯欄位</summary>
     public async Task ReplyTextAsync(string replyToken, string text, WebhookLogContext? logContext, CancellationToken ct = default)
     {

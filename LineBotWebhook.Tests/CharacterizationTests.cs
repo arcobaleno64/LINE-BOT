@@ -173,6 +173,34 @@ public class CharacterizationTests
     }
 
     [Fact]
+    public async Task TextMessageHandler_MarkdownReply_IsSanitized_AndQuickRepliesStillWork()
+    {
+        var config = TestFactory.BuildConfig();
+        var ai = new FakeAiService
+        {
+            OnTextAsync = (msg, key, ct, enableQuickReplies) =>
+                Task.FromResult("# 回覆標題\n* **第一點**\n詳見[文件](https://example.com/doc)\n\n<quick-replies>[\"分析文件\",\"再問一個\"]</quick-replies>")
+        };
+        var handler = new RecordingHttpMessageHandler((request, ct) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)));
+        var textHandler = TestFactory.CreateTextHandler(config, ai, handler);
+
+        var evt = BuildTextEvent("user", "幫我整理");
+        await textHandler.HandleAsync(evt, "https://unit.test", CancellationToken.None);
+
+        var replyText = TestFactory.GetLastReplyText(handler);
+        Assert.NotNull(replyText);
+        Assert.DoesNotContain("#", replyText!, StringComparison.Ordinal);
+        Assert.DoesNotContain("**", replyText!, StringComparison.Ordinal);
+        Assert.Contains("• 第一點", replyText!, StringComparison.Ordinal);
+        Assert.Contains("文件 (https://example.com/doc)", replyText!, StringComparison.Ordinal);
+        Assert.DoesNotContain("<quick-replies>", replyText!, StringComparison.Ordinal);
+
+        using var payload = TestFactory.GetLastReplyPayload(handler);
+        var items = payload!.RootElement.GetProperty("messages")[0].GetProperty("quickReply").GetProperty("items");
+        Assert.Equal(2, items.GetArrayLength());
+    }
+
+    [Fact]
     public async Task TextMessageHandler_MalformedQuickReplyMetadata_DoesNotBreakReply()
     {
         var config = TestFactory.BuildConfig();
@@ -262,6 +290,49 @@ public class CharacterizationTests
         Assert.True(handled);
         Assert.Equal(1, ai.ImageCalls);
         Assert.NotNull(TestFactory.GetLastReplyText(handler));
+    }
+
+    [Fact]
+    public async Task ImageInUserChat_MarkdownReply_IsSanitized()
+    {
+        var config = TestFactory.BuildConfig();
+        var ai = new FakeAiService
+        {
+            OnImageAsync = (bytes, mime, prompt, key, ct) =>
+                Task.FromResult("# 圖片重點\n* **第一項**\n* 第二項")
+        };
+        var handler = new RecordingHttpMessageHandler((request, ct) =>
+        {
+            if (request.RequestUri!.ToString().Contains("api-data.line.me", StringComparison.Ordinal))
+            {
+                var response = new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new ByteArrayContent([1, 2, 3])
+                };
+                response.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/png");
+                return Task.FromResult(response);
+            }
+
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK));
+        });
+
+        var imageHandler = TestFactory.CreateImageHandler(config, ai, handler);
+        var evt = new LineEvent
+        {
+            Type = "message",
+            ReplyToken = "r1",
+            Source = new LineSource { Type = "user", UserId = "u1" },
+            Message = new LineMessage { Id = "m1", Type = "image" }
+        };
+
+        await imageHandler.HandleAsync(evt, "https://unit.test", CancellationToken.None);
+
+        var replyText = TestFactory.GetLastReplyText(handler);
+        Assert.NotNull(replyText);
+        Assert.DoesNotContain("#", replyText!, StringComparison.Ordinal);
+        Assert.DoesNotContain("**", replyText!, StringComparison.Ordinal);
+        Assert.Contains("• 第一項", replyText!, StringComparison.Ordinal);
+        Assert.Contains("• 第二項", replyText!, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -396,6 +467,66 @@ public class CharacterizationTests
         Assert.NotNull(replyText);
         Assert.Contains("下載整理檔", replyText!);
         Assert.Contains("https://unit.test/downloads/", replyText!);
+    }
+
+    [Fact]
+    public async Task FileSupported_LineReplyIsSanitized_ButDownloadKeepsMarkdown()
+    {
+        var config = TestFactory.BuildConfig();
+        var files = new GeneratedFileService();
+        var ai = new FakeAiService
+        {
+            OnFileAsync = (name, mime, text, prompt, userKey, ct) =>
+                Task.FromResult("# 摘要\n* **粗體摘要**\n詳見[連結](https://example.com/ref)")
+        };
+        var handler = new RecordingHttpMessageHandler((request, ct) =>
+        {
+            if (request.RequestUri!.ToString().Contains("api-data.line.me", StringComparison.Ordinal))
+            {
+                var response = new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new ByteArrayContent(System.Text.Encoding.UTF8.GetBytes("hello"))
+                };
+                response.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("text/plain");
+                return Task.FromResult(response);
+            }
+
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK));
+        });
+
+        var fileHandler = TestFactory.CreateFileHandler(config, ai, handler, files: files);
+        var evt = new LineEvent
+        {
+            Type = "message",
+            ReplyToken = "r1",
+            Source = new LineSource { Type = "user", UserId = "u1" },
+            Message = new LineMessage { Id = "m1", Type = "file", FileName = "a.txt" }
+        };
+
+        await fileHandler.HandleAsync(evt, "https://unit.test", CancellationToken.None);
+
+        var replyText = TestFactory.GetLastReplyText(handler);
+        Assert.NotNull(replyText);
+        Assert.Contains("• 粗體摘要", replyText!, StringComparison.Ordinal);
+        Assert.Contains("連結 (https://example.com/ref)", replyText!, StringComparison.Ordinal);
+        Assert.DoesNotContain("#", replyText!, StringComparison.Ordinal);
+        Assert.DoesNotContain("**", replyText!, StringComparison.Ordinal);
+
+        const string downloadPrefix = "https://unit.test/downloads/";
+        var tokenStart = replyText.IndexOf(downloadPrefix, StringComparison.Ordinal);
+        Assert.True(tokenStart >= 0);
+        tokenStart += downloadPrefix.Length;
+        var tokenEnd = replyText.IndexOfAny(['\r', '\n'], tokenStart);
+        if (tokenEnd < 0)
+            tokenEnd = replyText.Length;
+
+        var token = replyText[tokenStart..tokenEnd].Trim();
+        var generated = files.Get(token);
+        Assert.NotNull(generated);
+        var markdown = File.ReadAllText(generated!.FilePath);
+        Assert.Contains("# 摘要", markdown, StringComparison.Ordinal);
+        Assert.Contains("**粗體摘要**", markdown, StringComparison.Ordinal);
+        Assert.Contains("[連結](https://example.com/ref)", markdown, StringComparison.Ordinal);
     }
 
     [Fact]

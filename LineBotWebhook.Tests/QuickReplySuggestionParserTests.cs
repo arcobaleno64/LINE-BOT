@@ -39,4 +39,13 @@ public class QuickReplySuggestionParserTests
         Assert.Equal("主回覆", result.MainText);
         Assert.Equal(["分析文件", "正常提問", "再問一個"], result.Suggestions);
     }
+
+    [Fact]
+    public void MarkdownMainText_StillParsesQuickRepliesMetadata()
+    {
+        var result = QuickReplySuggestionParser.Parse("# 標題\n* **重點**\n詳見[文件](https://example.com)\n\n<quick-replies>[\"分析文件\",\"再問一個\"]</quick-replies>");
+
+        Assert.Equal("# 標題\n* **重點**\n詳見[文件](https://example.com)", result.MainText);
+        Assert.Equal(["分析文件", "再問一個"], result.Suggestions);
+    }
 }

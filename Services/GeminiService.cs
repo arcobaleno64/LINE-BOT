@@ -247,11 +247,7 @@ MIME：{mimeType}
 
     private string BuildSystemPrompt(bool enableQuickReplies)
     {
-        var basePrompt = _persona.SystemPrompt;
-        if (!enableQuickReplies)
-            return basePrompt;
-
-        return basePrompt + "\n回答結束後，若適合，可在回覆最後附上唯一格式：\\n\\n<quick-replies>[\"選項1\",\"選項2\"]</quick-replies>。最多 3 個選項，需短、自然、可直接點擊送出；若不適合提供，就不要附加任何 quick reply 區塊。";
+        return LineReplyTextFormatter.BuildSystemPrompt(_persona.SystemPrompt, enableQuickReplies);
     }
 
     private IEnumerable<GeminiAttempt> BuildAttempts()

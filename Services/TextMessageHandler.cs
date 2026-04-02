@@ -116,13 +116,13 @@ public class TextMessageHandler : ITextMessageHandler
 {sourceList}
 """;
 
-            await _reply.ReplyTextAsync(evt.ReplyToken!, finalReply, webAiResult.Suggestions, logContext, ct);
+            await _reply.ReplyAiTextAsync(evt.ReplyToken!, finalReply, webAiResult.Suggestions, logContext, ct);
             return true;
         }
 
         var textReply = await GetMergedTextReplyAsync(userKey, userText, ct, logContext);
         var parsedReply = QuickReplySuggestionParser.Parse(textReply);
-        await _reply.ReplyTextAsync(evt.ReplyToken!, parsedReply.MainText, parsedReply.Suggestions, logContext, ct);
+        await _reply.ReplyAiTextAsync(evt.ReplyToken!, parsedReply.MainText, parsedReply.Suggestions, logContext, ct);
         return true;
     }
 

@@ -70,7 +70,7 @@ public class ImageMessageHandler : IImageMessageHandler
         if (aiReply is null)
             return true;
 
-        await _reply.ReplyTextAsync(evt.ReplyToken!, aiReply, logContext, ct);
+        await _reply.ReplyAiTextAsync(evt.ReplyToken!, aiReply, logContext, ct);
         return true;
     }
 
