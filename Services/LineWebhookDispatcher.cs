@@ -38,7 +38,14 @@ public class LineWebhookDispatcher : ILineWebhookDispatcher
             return;
 
         if (string.IsNullOrEmpty(evt.ReplyToken))
+        {
+            _logger.LogWarning(
+                "Skipped reply because reply token is missing. EventId={EventId} MessageType={MessageType} SourceType={SourceType}",
+                evt.WebhookEventId,
+                evt.Message.Type,
+                evt.Source?.Type ?? "unknown");
             return;
+        }
 
         if (await _textMessageHandler.HandleAsync(evt, publicBaseUrl, ct))
         {
