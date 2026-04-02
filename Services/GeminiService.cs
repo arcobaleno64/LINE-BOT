@@ -34,6 +34,16 @@ public class GeminiService : IAiService
         _logger = logger;
     }
 
+    public GeminiService(HttpClient http, IConfiguration config, ConversationHistoryService history, ILogger<GeminiService> logger)
+        : this(
+            http,
+            config,
+            history,
+            new PersonaContext("你是一位親切的管家，語氣溫暖有禮、回答精簡實用，必要時可條列重點。請全程使用繁體中文，並避免自稱是 AI。"),
+            logger)
+    {
+    }
+
     public async Task<string> GetReplyAsync(string userMessage, string userKey, CancellationToken ct = default, bool enableQuickReplies = false)
     {
         return await GetReplyFromTextPromptAsync(userMessage, userKey, "text", ct, enableQuickReplies);

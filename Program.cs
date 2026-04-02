@@ -42,7 +42,6 @@ builder.Services.AddSingleton<IAiService>(sp =>
         sp.GetRequiredService<ConversationHistoryService>(),
         sp.GetRequiredService<ILoggerFactory>(),
         sp.GetRequiredService<PersonaContext>(),
-        sp.GetRequiredService<ILoggerFactory>(),
         sp.GetRequiredService<ILogger<FailoverAiService>>()));
 
 // ---------- DI: LINE Reply Service ----------

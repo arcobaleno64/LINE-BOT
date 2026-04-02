@@ -25,6 +25,22 @@ public class FailoverAiService : IAiService
             throw new InvalidOperationException("No AI providers are configured. Please set at least one provider API key.");
     }
 
+    public FailoverAiService(
+        IHttpClientFactory httpClientFactory,
+        IConfiguration config,
+        ConversationHistoryService history,
+        ILoggerFactory loggerFactory,
+        ILogger<FailoverAiService> logger)
+        : this(
+            httpClientFactory,
+            config,
+            history,
+            loggerFactory,
+            new PersonaContext("你是一位親切的管家，語氣溫暖有禮、回答精簡實用，必要時可條列重點。請全程使用繁體中文，並避免自稱是 AI。"),
+            logger)
+    {
+    }
+
     public Task<string> GetReplyAsync(string userMessage, string userKey, CancellationToken ct = default, bool enableQuickReplies = false)
         => ExecuteWithFailoverAsync(
             provider => provider.Service.GetReplyAsync(userMessage, userKey, ct, enableQuickReplies),
@@ -115,7 +131,6 @@ public class FailoverAiService : IAiService
         var providers = new List<ProviderEntry>();
         foreach (var name in orderedNames.Distinct(StringComparer.OrdinalIgnoreCase))
         {
-            var provider = TryCreateProvider(name, httpClientFactory, config, history, persona);
             var provider = TryCreateProvider(name, httpClientFactory, config, history, loggerFactory, persona);
             if (provider is not null)
                 providers.Add(provider);
@@ -131,8 +146,7 @@ public class FailoverAiService : IAiService
             if (AiConfigurationHelpers.GetConfiguredValues(config, "Ai:Gemini:ApiKey", "Ai:Gemini:SecondaryApiKey").Count == 0)
                 return null;
 
-            return new ProviderEntry("Gemini", new GeminiService(httpClientFactory.CreateClient(), config, history, persona));
-        return new ProviderEntry("Gemini", new GeminiService(httpClientFactory.CreateClient(), config, history, persona, loggerFactory.CreateLogger<GeminiService>()));
+            return new ProviderEntry("Gemini", new GeminiService(httpClientFactory.CreateClient(), config, history, persona, loggerFactory.CreateLogger<GeminiService>()));
         }
 
         if (name.Equals("OpenAI", StringComparison.OrdinalIgnoreCase))
