@@ -109,7 +109,7 @@ public class FileMessageHandler : IFileMessageHandler
 提醒：下載連結會保留約 24 小時，重新部署後可能失效。
 """;
 
-        await _reply.ReplyTextAsync(evt.ReplyToken!, replyText, logContext, ct);
+        await _reply.ReplyAiTextAsync(evt.ReplyToken!, replyText, logContext, ct);
         return true;
     }
 
