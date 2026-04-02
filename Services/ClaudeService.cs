@@ -11,8 +11,9 @@ public class ClaudeService : IAiService
     private readonly string _endpoint;
     private readonly int _maxOutputTokens;
     private readonly ConversationHistoryService _history;
+    private readonly PersonaContext _persona;
 
-    public ClaudeService(HttpClient http, IConfiguration config, ConversationHistoryService history)
+    public ClaudeService(HttpClient http, IConfiguration config, ConversationHistoryService history, PersonaContext persona)
     {
         _http     = http;
         _apiKey   = config["Ai:Claude:ApiKey"] ?? throw new InvalidOperationException("Missing Ai:Claude:ApiKey");
@@ -20,6 +21,7 @@ public class ClaudeService : IAiService
         _endpoint = config["Ai:Claude:Endpoint"] ?? "https://api.anthropic.com/v1/messages";
         _maxOutputTokens = int.TryParse(config["Ai:MaxOutputTokens"], out var parsed) ? parsed : 4096;
         _history  = history;
+        _persona  = persona;
     }
 
     public async Task<string> GetReplyAsync(string userMessage, string userKey, CancellationToken ct = default, bool enableQuickReplies = false)
@@ -36,23 +38,7 @@ public class ClaudeService : IAiService
             system     = BuildSystemPrompt(enableQuickReplies),
             messages   = historyMsgs
         };
-
-        var request = new HttpRequestMessage(HttpMethod.Post, _endpoint)
-        {
-            Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json")
-        };
-        request.Headers.Add("x-api-key", _apiKey);
-        request.Headers.Add("anthropic-version", "2023-06-01");
-
-        var response = await _http.SendAsync(request, ct);
-        response.EnsureSuccessStatusCode();
-
-        using var doc = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
-        var text = doc.RootElement
-            .GetProperty("content")[0]
-            .GetProperty("text")
-            .GetString() ?? "(AI 無回應)";
-
+        var text = await SendGenerateAsync(payload, ct);
         var parsed = QuickReplySuggestionParser.Parse(text);
         _history.Append(userKey, userMessage, parsed.MainText);
         return text;
@@ -86,12 +72,44 @@ MIME：{mimeType}
         return GetReplyAsync(prompt, userKey, ct);
     }
 
-    private static string BuildSystemPrompt(bool enableQuickReplies)
+    private string BuildSystemPrompt(bool enableQuickReplies)
     {
-        const string basePrompt = "你是一位親切的管家，語氣溫暖有禮、回答精簡實用，必要時可條列重點。請全程使用繁體中文，並避免自稱是 AI。";
+        var basePrompt = _persona.SystemPrompt;
         if (!enableQuickReplies)
             return basePrompt;
 
         return basePrompt + "\n回答結束後，若適合，可在回覆最後附上唯一格式：\\n\\n<quick-replies>[\"選項1\",\"選項2\"]</quick-replies>。最多 3 個選項，需短、自然、可直接點擊送出；若不適合提供，就不要附加任何 quick reply 區塊。";
+    }
+
+    public async Task<string> GenerateStatelessReplyAsync(string prompt, CancellationToken ct = default)
+    {
+        var payload = new
+        {
+            model      = _model,
+            max_tokens = _maxOutputTokens,
+            system     = _persona.SystemPrompt,
+            messages   = new[] { new { role = "user", content = prompt } }
+        };
+
+        return await SendGenerateAsync(payload, ct);
+    }
+
+    private async Task<string> SendGenerateAsync(object payload, CancellationToken ct)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, _endpoint)
+        {
+            Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json")
+        };
+        request.Headers.Add("x-api-key", _apiKey);
+        request.Headers.Add("anthropic-version", "2023-06-01");
+
+        var response = await _http.SendAsync(request, ct);
+        response.EnsureSuccessStatusCode();
+
+        using var doc = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
+        return doc.RootElement
+            .GetProperty("content")[0]
+            .GetProperty("text")
+            .GetString() ?? "(AI 無回應)";
     }
 }

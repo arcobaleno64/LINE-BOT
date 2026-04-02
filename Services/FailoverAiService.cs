@@ -7,15 +7,19 @@ public class FailoverAiService : IAiService
     private readonly IReadOnlyList<ProviderEntry> _providers;
     private readonly ILogger<FailoverAiService> _logger;
 
+    private readonly PersonaContext _persona;
+
     public FailoverAiService(
         IHttpClientFactory httpClientFactory,
         IConfiguration config,
         ConversationHistoryService history,
         ILoggerFactory loggerFactory,
+        PersonaContext persona,
         ILogger<FailoverAiService> logger)
     {
         _logger = logger;
-        _providers = BuildProviders(httpClientFactory, config, history, loggerFactory);
+        _persona = persona;
+        _providers = BuildProviders(httpClientFactory, config, history, loggerFactory, persona);
 
         if (_providers.Count == 0)
             throw new InvalidOperationException("No AI providers are configured. Please set at least one provider API key.");
@@ -35,6 +39,11 @@ public class FailoverAiService : IAiService
         => ExecuteWithFailoverAsync(
             provider => provider.Service.GetReplyFromDocumentAsync(fileName, mimeType, extractedText, userPrompt, userKey, ct),
             "document");
+
+    public Task<string> GenerateStatelessReplyAsync(string prompt, CancellationToken ct = default)
+        => ExecuteWithFailoverAsync(
+            provider => provider.Service.GenerateStatelessReplyAsync(prompt, ct),
+            "stateless");
 
     private async Task<string> ExecuteWithFailoverAsync(Func<ProviderEntry, Task<string>> call, string requestType)
     {
@@ -92,7 +101,7 @@ public class FailoverAiService : IAiService
         return ex.InnerException is not null && ShouldFailover(ex.InnerException);
     }
 
-    private static IReadOnlyList<ProviderEntry> BuildProviders(IHttpClientFactory httpClientFactory, IConfiguration config, ConversationHistoryService history, ILoggerFactory loggerFactory)
+    private static IReadOnlyList<ProviderEntry> BuildProviders(IHttpClientFactory httpClientFactory, IConfiguration config, ConversationHistoryService history, ILoggerFactory loggerFactory, PersonaContext persona)
     {
         var primary = (config["Ai:Provider"] ?? "Gemini").Trim();
         var fallback = config["Ai:FallbackProvider"]?.Trim();
@@ -106,7 +115,8 @@ public class FailoverAiService : IAiService
         var providers = new List<ProviderEntry>();
         foreach (var name in orderedNames.Distinct(StringComparer.OrdinalIgnoreCase))
         {
-            var provider = TryCreateProvider(name, httpClientFactory, config, history, loggerFactory);
+            var provider = TryCreateProvider(name, httpClientFactory, config, history, persona);
+            var provider = TryCreateProvider(name, httpClientFactory, config, history, loggerFactory, persona);
             if (provider is not null)
                 providers.Add(provider);
         }
@@ -114,14 +124,15 @@ public class FailoverAiService : IAiService
         return providers;
     }
 
-    private static ProviderEntry? TryCreateProvider(string name, IHttpClientFactory httpClientFactory, IConfiguration config, ConversationHistoryService history, ILoggerFactory loggerFactory)
+    private static ProviderEntry? TryCreateProvider(string name, IHttpClientFactory httpClientFactory, IConfiguration config, ConversationHistoryService history, ILoggerFactory loggerFactory, PersonaContext persona)
     {
         if (name.Equals("Gemini", StringComparison.OrdinalIgnoreCase))
         {
             if (AiConfigurationHelpers.GetConfiguredValues(config, "Ai:Gemini:ApiKey", "Ai:Gemini:SecondaryApiKey").Count == 0)
                 return null;
 
-            return new ProviderEntry("Gemini", new GeminiService(httpClientFactory.CreateClient(), config, history, loggerFactory.CreateLogger<GeminiService>()));
+            return new ProviderEntry("Gemini", new GeminiService(httpClientFactory.CreateClient(), config, history, persona));
+        return new ProviderEntry("Gemini", new GeminiService(httpClientFactory.CreateClient(), config, history, persona, loggerFactory.CreateLogger<GeminiService>()));
         }
 
         if (name.Equals("OpenAI", StringComparison.OrdinalIgnoreCase))
@@ -129,7 +140,7 @@ public class FailoverAiService : IAiService
             if (AiConfigurationHelpers.GetConfiguredValue(config, "Ai:OpenAI:ApiKey") is null)
                 return null;
 
-            return new ProviderEntry("OpenAI", new OpenAiService(httpClientFactory.CreateClient(), config, history));
+            return new ProviderEntry("OpenAI", new OpenAiService(httpClientFactory.CreateClient(), config, history, persona));
         }
 
         if (name.Equals("Claude", StringComparison.OrdinalIgnoreCase))
@@ -137,7 +148,7 @@ public class FailoverAiService : IAiService
             if (AiConfigurationHelpers.GetConfiguredValue(config, "Ai:Claude:ApiKey") is null)
                 return null;
 
-            return new ProviderEntry("Claude", new ClaudeService(httpClientFactory.CreateClient(), config, history));
+            return new ProviderEntry("Claude", new ClaudeService(httpClientFactory.CreateClient(), config, history, persona));
         }
 
         return null;

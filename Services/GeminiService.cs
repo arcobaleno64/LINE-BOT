@@ -6,7 +6,6 @@ namespace LineBotWebhook.Services;
 
 public class GeminiService : IAiService
 {
-    private const string ButlerPrompt = "你是一位親切的管家，語氣溫暖有禮、回答精簡實用，必要時可條列重點。請全程使用繁體中文，並避免自稱是 AI。";
     private const string ProviderName = "Gemini";
 
     private readonly HttpClient _http;
@@ -16,9 +15,10 @@ public class GeminiService : IAiService
     private readonly string _endpoint;
     private readonly int _maxOutputTokens;
     private readonly ConversationHistoryService _history;
+    private readonly PersonaContext _persona;
     private readonly ILogger<GeminiService> _logger;
 
-    public GeminiService(HttpClient http, IConfiguration config, ConversationHistoryService history, ILogger<GeminiService> logger)
+    public GeminiService(HttpClient http, IConfiguration config, ConversationHistoryService history, PersonaContext persona, ILogger<GeminiService> logger)
     {
         _http = http;
         _apiKeys = AiConfigurationHelpers.GetConfiguredValues(config, "Ai:Gemini:ApiKey", "Ai:Gemini:SecondaryApiKey");
@@ -30,6 +30,7 @@ public class GeminiService : IAiService
         _endpoint = config["Ai:Gemini:Endpoint"] ?? "https://generativelanguage.googleapis.com/v1beta/models";
         _maxOutputTokens = int.TryParse(config["Ai:MaxOutputTokens"], out var parsed) ? parsed : 4096;
         _history = history;
+        _persona = persona;
         _logger = logger;
     }
 
@@ -99,6 +100,23 @@ MIME：{mimeType}
 """;
 
         return GetReplyFromTextPromptAsync(prompt, userKey, "document", ct, enableQuickReplies: false);
+    }
+
+    public Task<string> GenerateStatelessReplyAsync(string prompt, CancellationToken ct = default)
+    {
+        var contents = new[]
+        {
+            new { role = "user", parts = new[] { new { text = prompt } } }
+        };
+
+        var payload = new
+        {
+            contents,
+            systemInstruction = new { parts = new[] { new { text = _persona.SystemPrompt } } },
+            generationConfig = new { maxOutputTokens = _maxOutputTokens }
+        };
+
+        return SendWithRetryAsync(payload, "stateless", ct);
     }
 
     private object BuildPayload(object contents, bool enableQuickReplies) => new
@@ -197,8 +215,7 @@ MIME：{mimeType}
 
     private async Task<string> GetReplyFromTextPromptAsync(string prompt, string userKey, string requestType, CancellationToken ct, bool enableQuickReplies)
     {
-        var history = _history.GetHistory(userKey);
-        var contents = history
+        var contents = _history.GetHistory(userKey)
             .Select(m => new
             {
                 role = m.Role == "assistant" ? "model" : "user",
@@ -218,12 +235,13 @@ MIME：{mimeType}
         return text;
     }
 
-    private static string BuildSystemPrompt(bool enableQuickReplies)
+    private string BuildSystemPrompt(bool enableQuickReplies)
     {
+        var basePrompt = _persona.SystemPrompt;
         if (!enableQuickReplies)
-            return ButlerPrompt;
+            return basePrompt;
 
-        return ButlerPrompt + "\n回答結束後，若適合，可在回覆最後附上唯一格式：\\n\\n<quick-replies>[\"選項1\",\"選項2\"]</quick-replies>。最多 3 個選項，需短、自然、可直接點擊送出；若不適合提供，就不要附加任何 quick reply 區塊。";
+        return basePrompt + "\n回答結束後，若適合，可在回覆最後附上唯一格式：\\n\\n<quick-replies>[\"選項1\",\"選項2\"]</quick-replies>。最多 3 個選項，需短、自然、可直接點擊送出；若不適合提供，就不要附加任何 quick reply 區塊。";
     }
 
     private IEnumerable<GeminiAttempt> BuildAttempts()
@@ -286,4 +304,3 @@ MIME：{mimeType}
 
     private sealed record GeminiAttempt(string ApiKey, string Model, string KeySlot, string ModelSlot);
 }
-
