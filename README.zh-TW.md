@@ -1,9 +1,3 @@
-<div align="right">
-
-**語言 / Language：** [English](README.md) | 繁體中文
-
-</div>
-
 <div align="center">
 
 # LINE-BOT
@@ -23,6 +17,8 @@
 <p>
   更自然的互動體驗，更可靠的文件摘要流程，更貼近正式上線需求的後端架構。
 </p>
+
+繁體中文 | **[English](README.md)**
 
 </div>
 
