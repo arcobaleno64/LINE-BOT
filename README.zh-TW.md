@@ -1,3 +1,9 @@
+<div align="right">
+
+**語言 / Language：** [English](README.md) | 繁體中文
+
+</div>
+
 <div align="center">
 
 # LINE-BOT
