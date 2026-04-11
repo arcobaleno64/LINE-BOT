@@ -1,9 +1,3 @@
-<div align="right">
-
-**Language / 語言：** English | [繁體中文](README.zh-TW.md)
-
-</div>
-
 <div align="center">
 
 # LINE-BOT
@@ -23,6 +17,8 @@
 <p>
   A more natural interaction experience, a more reliable document summarization pipeline, and a backend architecture closer to production-ready requirements.
 </p>
+
+English | **[繁體中文](README.zh-TW.md)**
 
 </div>
 
