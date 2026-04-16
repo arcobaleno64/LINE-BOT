@@ -49,34 +49,34 @@ public class DocumentPipelineTests
     }
 
     [Fact]
-    public void GroundingService_NoQuestionPrompt_UsesSummaryMode()
+    public async Task GroundingService_NoQuestionPrompt_UsesSummaryMode()
     {
         var service = new DocumentGroundingService(new DocumentChunker(), new DocumentChunkSelector());
         var text = BuildLongDocument(40, "這是摘要模式測試內容");
 
-        var result = service.Prepare("report.txt", "text/plain", text, "請幫我整理重點、關鍵結論與待辦事項。");
+        var result = await service.PrepareAsync("report.txt", "text/plain", text, "請幫我整理重點、關鍵結論與待辦事項。");
 
         Assert.Equal(DocumentTaskMode.Summary, result.Mode);
     }
 
     [Fact]
-    public void GroundingService_QuestionPrompt_UsesQuestionAnswerMode()
+    public async Task GroundingService_QuestionPrompt_UsesQuestionAnswerMode()
     {
         var service = new DocumentGroundingService(new DocumentChunker(), new DocumentChunkSelector());
         var text = BuildLongDocument(12, "這是問答模式測試內容");
 
-        var result = service.Prepare("report.txt", "text/plain", text, "這份文件提到的截止日是什麼？");
+        var result = await service.PrepareAsync("report.txt", "text/plain", text, "這份文件提到的截止日是什麼？");
 
         Assert.Equal(DocumentTaskMode.QuestionAnswer, result.Mode);
     }
 
     [Fact]
-    public void GroundingService_SummaryMode_Prompt_RequiresGroundedSummary()
+    public async Task GroundingService_SummaryMode_Prompt_RequiresGroundedSummary()
     {
         var service = new DocumentGroundingService(new DocumentChunker(), new DocumentChunkSelector());
         var text = BuildLongDocument(40, "這是摘要模式測試內容");
 
-        var result = service.Prepare("report.txt", "text/plain", text, "請幫我整理重點、關鍵結論與待辦事項。");
+        var result = await service.PrepareAsync("report.txt", "text/plain", text, "請幫我整理重點、關鍵結論與待辦事項。");
 
         Assert.True(result.AllChunks.Count > 1);
         Assert.True(result.SelectedChunks.Count > 1);
@@ -87,11 +87,11 @@ public class DocumentPipelineTests
     }
 
     [Fact]
-    public void GroundingService_EmptyDocument_ReturnsNoChunks_ButKeepsGroundedPrompt()
+    public async Task GroundingService_EmptyDocument_ReturnsNoChunks_ButKeepsGroundedPrompt()
     {
         var service = new DocumentGroundingService(new DocumentChunker(), new DocumentChunkSelector());
 
-        var result = service.Prepare("empty.txt", "text/plain", "   ", "請幫我整理重點、關鍵結論與待辦事項。");
+        var result = await service.PrepareAsync("empty.txt", "text/plain", "   ", "請幫我整理重點、關鍵結論與待辦事項。");
 
         Assert.Empty(result.AllChunks);
         Assert.Empty(result.SelectedChunks);
@@ -101,7 +101,7 @@ public class DocumentPipelineTests
     }
 
     [Fact]
-    public void GroundingService_QuestionMode_Prompt_InstructsInsufficientEvidenceResponse()
+    public async Task GroundingService_QuestionMode_Prompt_InstructsInsufficientEvidenceResponse()
     {
         var service = new DocumentGroundingService(new DocumentChunker(), new DocumentChunkSelector());
         var text = """
@@ -112,7 +112,7 @@ public class DocumentPipelineTests
 第三節：其他補充資訊。
 """;
 
-        var result = service.Prepare("meeting.md", "text/markdown", text, "這份文件提到的截止日是什麼？");
+        var result = await service.PrepareAsync("meeting.md", "text/markdown", text, "這份文件提到的截止日是什麼？");
 
         Assert.Equal(DocumentTaskMode.QuestionAnswer, result.Mode);
         Assert.Contains("截止日", result.SelectedContext, StringComparison.Ordinal);

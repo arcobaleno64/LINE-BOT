@@ -9,7 +9,7 @@ namespace LineBotWebhook.Tests;
 public class FileFallbackTests
 {
     [Fact]
-    public void GroundingService_WhenSemanticSelectorThrows_FallsBackToLexicalSelection()
+    public async Task GroundingService_WhenSemanticSelectorThrows_FallsBackToLexicalSelection()
     {
         var selector = new FakeSemanticChunkSelector
         {
@@ -22,7 +22,7 @@ public class FileFallbackTests
             NullLogger<DocumentGroundingService>.Instance);
         var text = BuildLongDocument();
 
-        var result = service.Prepare("report.txt", "text/plain", text, "請幫我整理重點、關鍵結論與待辦事項。");
+        var result = await service.PrepareAsync("report.txt", "text/plain", text, "請幫我整理重點、關鍵結論與待辦事項。");
 
         Assert.True(result.AllChunks.Count > 1);
         Assert.NotEmpty(result.SelectedChunks);
