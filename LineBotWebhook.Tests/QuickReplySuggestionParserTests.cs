@@ -14,6 +14,24 @@ public class QuickReplySuggestionParserTests
     }
 
     [Fact]
+    public void LiteralEscapedNewlineMetadata_SplitsReplyText_AndSuggestions()
+    {
+        var result = QuickReplySuggestionParser.Parse("主回覆內容\\n\\n<quick-replies>[\"分析文件\",\"分析圖片\"]</quick-replies>");
+
+        Assert.Equal("主回覆內容", result.MainText);
+        Assert.Equal(["分析文件", "分析圖片"], result.Suggestions);
+    }
+
+    [Fact]
+    public void MetadataWithLeadingSpaces_BeforeTag_SplitsReplyText_AndSuggestions()
+    {
+        var result = QuickReplySuggestionParser.Parse("主回覆內容   <quick-replies>[\"分析文件\",\"分析圖片\"]</quick-replies>");
+
+        Assert.Equal("主回覆內容", result.MainText);
+        Assert.Equal(["分析文件", "分析圖片"], result.Suggestions);
+    }
+
+    [Fact]
     public void MalformedMetadata_DropsSuggestions_AndDoesNotLeakTags()
     {
         var result = QuickReplySuggestionParser.Parse("主回覆內容\n\n<quick-replies>[\"分析文件\",</quick-replies>");

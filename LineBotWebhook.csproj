@@ -11,6 +11,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Content Remove="LineBotWebhook.Tests\**\*" />
     <Compile Remove="LineBotWebhook.Tests\**\*.cs" />
     <EmbeddedResource Remove="LineBotWebhook.Tests\**\*" />
     <None Remove="LineBotWebhook.Tests\**\*" />

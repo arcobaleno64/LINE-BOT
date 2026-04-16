@@ -173,6 +173,29 @@ public class CharacterizationTests
     }
 
     [Fact]
+    public async Task TextMessageHandler_LiteralEscapedNewlineQuickReplyMetadata_DoesNotLeakMetadataToUser()
+    {
+        var config = TestFactory.BuildConfig();
+        var ai = new FakeAiService
+        {
+            OnTextAsync = (msg, key, ct, enableQuickReplies) =>
+                Task.FromResult("這是主回覆\\n\\n<quick-replies>[\"分析文件\",\"分析圖片\"]</quick-replies>")
+        };
+        var handler = new RecordingHttpMessageHandler((request, ct) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)));
+        var textHandler = TestFactory.CreateTextHandler(config, ai, handler);
+
+        var evt = BuildTextEvent("user", "你好");
+        await textHandler.HandleAsync(evt, "https://unit.test", CancellationToken.None);
+
+        var replyText = TestFactory.GetLastReplyText(handler);
+        Assert.Equal("這是主回覆", replyText);
+        Assert.DoesNotContain("<quick-replies>", replyText, StringComparison.Ordinal);
+        using var payload = TestFactory.GetLastReplyPayload(handler);
+        var items = payload!.RootElement.GetProperty("messages")[0].GetProperty("quickReply").GetProperty("items");
+        Assert.Equal(2, items.GetArrayLength());
+    }
+
+    [Fact]
     public async Task TextMessageHandler_MarkdownReply_IsSanitized_AndQuickRepliesStillWork()
     {
         var config = TestFactory.BuildConfig();
