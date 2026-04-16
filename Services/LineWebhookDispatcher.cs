@@ -8,6 +8,7 @@ public class LineWebhookDispatcher : ILineWebhookDispatcher
     private readonly IImageMessageHandler _imageMessageHandler;
     private readonly IFileMessageHandler _fileMessageHandler;
     private readonly LineReplyService _reply;
+    private readonly LoadingIndicatorService _loading;
     private readonly IWebhookMetrics _metrics;
     private readonly ILogger<LineWebhookDispatcher> _logger;
 
@@ -16,6 +17,7 @@ public class LineWebhookDispatcher : ILineWebhookDispatcher
         IImageMessageHandler imageMessageHandler,
         IFileMessageHandler fileMessageHandler,
         LineReplyService reply,
+        LoadingIndicatorService loading,
         IWebhookMetrics metrics,
         ILogger<LineWebhookDispatcher> logger)
     {
@@ -23,6 +25,7 @@ public class LineWebhookDispatcher : ILineWebhookDispatcher
         _imageMessageHandler = imageMessageHandler;
         _fileMessageHandler = fileMessageHandler;
         _reply = reply;
+        _loading = loading;
         _metrics = metrics;
         _logger = logger;
     }
@@ -34,6 +37,12 @@ public class LineWebhookDispatcher : ILineWebhookDispatcher
 
     private async Task DispatchCoreAsync(LineEvent evt, string publicBaseUrl, CancellationToken ct)
     {
+        if (evt.Type == "postback")
+        {
+            await HandlePostbackAsync(evt, ct);
+            return;
+        }
+
         if (evt.Type != "message" || evt.Message is null)
             return;
 
@@ -46,6 +55,10 @@ public class LineWebhookDispatcher : ILineWebhookDispatcher
                 evt.Source?.Type ?? "unknown");
             return;
         }
+
+        // 顯示讀取動畫（僅對已知需處理的訊息類型，fire-and-forget）
+        if (evt.Message.Type is "text" or "image" or "file")
+            _ = _loading.ShowAsync(evt, ct);
 
         if (await _textMessageHandler.HandleAsync(evt, publicBaseUrl, ct))
         {
@@ -106,5 +119,60 @@ public class LineWebhookDispatcher : ILineWebhookDispatcher
             evt.WebhookEventId,
             evt.Message.Type,
             evt.Source?.Type ?? "unknown");
+    }
+
+    private async Task HandlePostbackAsync(LineEvent evt, CancellationToken ct)
+    {
+        if (string.IsNullOrEmpty(evt.ReplyToken) || evt.Postback is null)
+        {
+            _logger.LogDebug(
+                "Ignored postback with missing token or data. EventId={EventId}",
+                evt.WebhookEventId);
+            return;
+        }
+
+        _metrics.RecordMessageHandled("postback", evt.Source?.Type);
+
+        var data = evt.Postback.Data;
+        var logContext = WebhookLogContext.FromEvent(evt, handlerType: "postback");
+
+        _logger.LogInformation(
+            "Handling postback event. EventId={EventId} SourceType={SourceType} DataPrefix={DataPrefix}",
+            evt.WebhookEventId,
+            evt.Source?.Type ?? "unknown",
+            data.Length > 30 ? data[..30] : data);
+
+        var parameters = ParsePostbackData(data);
+
+        var action = parameters.GetValueOrDefault("action", "");
+        switch (action)
+        {
+            default:
+                _logger.LogDebug(
+                    "Unhandled postback action. EventId={EventId} Action={Action}",
+                    evt.WebhookEventId,
+                    action);
+                break;
+        }
+    }
+
+    internal static Dictionary<string, string> ParsePostbackData(string data)
+    {
+        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (string.IsNullOrWhiteSpace(data))
+            return result;
+
+        foreach (var pair in data.Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var eqIndex = pair.IndexOf('=');
+            if (eqIndex > 0)
+            {
+                var key = Uri.UnescapeDataString(pair[..eqIndex]);
+                var value = Uri.UnescapeDataString(pair[(eqIndex + 1)..]);
+                result[key] = value;
+            }
+        }
+
+        return result;
     }
 }

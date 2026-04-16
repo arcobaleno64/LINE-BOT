@@ -26,6 +26,9 @@ public class LineEvent
     [JsonPropertyName("message")]
     public LineMessage? Message { get; set; }
 
+    [JsonPropertyName("postback")]
+    public LinePostback? Postback { get; set; }
+
     [JsonPropertyName("timestamp")]
     public long Timestamp { get; set; }
 
@@ -67,6 +70,30 @@ public class LineMessage
 
     [JsonPropertyName("mention")]
     public LineMention? Mention { get; set; }
+
+    [JsonPropertyName("quoteToken")]
+    public string? QuoteToken { get; set; }
+}
+
+public class LinePostback
+{
+    [JsonPropertyName("data")]
+    public string Data { get; set; } = string.Empty;
+
+    [JsonPropertyName("params")]
+    public LinePostbackParams? Params { get; set; }
+}
+
+public class LinePostbackParams
+{
+    [JsonPropertyName("date")]
+    public string? Date { get; set; }
+
+    [JsonPropertyName("time")]
+    public string? Time { get; set; }
+
+    [JsonPropertyName("datetime")]
+    public string? Datetime { get; set; }
 }
 
 public class LineMention

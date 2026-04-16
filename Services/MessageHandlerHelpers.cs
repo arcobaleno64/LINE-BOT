@@ -117,6 +117,14 @@ internal static class MessageHandlerHelpers
             : fallback;
     }
 
+    public static bool GetBoolConfig(IConfiguration config, string key, bool defaultValue)
+    {
+        var raw = config[key];
+        if (raw is null)
+            return defaultValue;
+        return bool.TryParse(raw, out var val) ? val : defaultValue;
+    }
+
     public static bool IsTooManyRequests(Exception ex)
     {
         if (ex is HttpRequestException httpEx && httpEx.StatusCode == HttpStatusCode.TooManyRequests)

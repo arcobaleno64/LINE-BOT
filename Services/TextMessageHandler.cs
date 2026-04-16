@@ -17,6 +17,7 @@ public class TextMessageHandler : ITextMessageHandler
     private readonly IDateTimeIntentResponder _dateTimeIntentResponder;
     private readonly IWebhookMetrics _metrics;
     private readonly ILogger<TextMessageHandler> _logger;
+    private readonly int _flexBodyMaxLength;
 
     public TextMessageHandler(
         IConfiguration config,
@@ -42,6 +43,7 @@ public class TextMessageHandler : ITextMessageHandler
         _dateTimeIntentResponder = dateTimeIntentResponder;
         _metrics = metrics;
         _logger = logger;
+        _flexBodyMaxLength = MessageHandlerHelpers.GetIntConfig(config, "App:FlexBodyMaxLength", 2000);
     }
 
     public async Task<bool> HandleAsync(LineEvent evt, string publicBaseUrl, CancellationToken ct)
@@ -107,15 +109,26 @@ public class TextMessageHandler : ITextMessageHandler
 
             var webAiResult = QuickReplySuggestionParser.Parse(webAiReply);
 
-            var sourceList = WebSearchService.BuildSourceList(searchOutcome.Sources);
-            var finalReply = $"""
-{webAiResult.MainText}
+            var sanitizedAnswer = LineReplyTextFormatter.SanitizeForLine(webAiResult.MainText);
+
+            if (sanitizedAnswer.Length <= _flexBodyMaxLength)
+            {
+                var bubble = FlexMessageBuilder.BuildSearchResultBubble(sanitizedAnswer, searchOutcome.Sources);
+                var altText = FlexMessageBuilder.BuildAltText(sanitizedAnswer);
+                await _reply.ReplyFlexAsync(evt.ReplyToken!, altText, bubble, webAiResult.Suggestions, logContext, ct);
+            }
+            else
+            {
+                var sourceList = WebSearchService.BuildSourceList(searchOutcome.Sources);
+                var finalReply = $"""
+{sanitizedAnswer}
 
 參考來源：
 {sourceList}
 """;
+                await _reply.ReplyAiTextAsync(evt.ReplyToken!, finalReply, webAiResult.Suggestions, logContext, ct);
+            }
 
-            await _reply.ReplyAiTextAsync(evt.ReplyToken!, finalReply, webAiResult.Suggestions, logContext, ct);
             return true;
         }
 
