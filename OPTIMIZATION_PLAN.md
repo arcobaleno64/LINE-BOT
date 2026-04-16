@@ -193,6 +193,8 @@ exit 1
         run: bash scripts/verify-deployment.sh "$RENDER_SERVICE_HOST"
 ```
 
+`RENDER_SERVICE_HOST` 可使用裸主機名或完整 `https://` URL。
+
 **事前驗屍（修正後）**：  
 → 驗證腳本本身超時  
 → Actions 顯示失敗  

@@ -7,10 +7,10 @@
 在 https://github.com/arcobaleno64/LINE-BOT/settings/secrets/actions 添加：
 
 ```
-RENDER_SERVICE_HOST: https://your-render-service.onrender.com
+RENDER_SERVICE_HOST: your-render-service.onrender.com
 ```
 
-取代 `your-render-service` 為你的實際 Render 服務名稱。
+取代 `your-render-service` 為你的實際 Render 服務名稱；若你習慣填完整網址，`https://your-render-service.onrender.com` 也可接受。
 
 ### 2. 啟用分支保護規則
 
