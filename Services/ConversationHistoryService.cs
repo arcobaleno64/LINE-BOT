@@ -24,6 +24,7 @@ public class ConversationHistoryService
     private readonly int _maxRounds;
     private readonly TimeSpan _idleExpiry;
     private readonly int _postSummaryRetainedMessages;
+    private const int MaxSessions = 1000;
 
     public ConversationHistoryService(int maxRounds = 15, int idleMinutes = -1)
         : this(summaryQueue: null, logger: null, maxRounds, idleMinutes)
@@ -181,14 +182,20 @@ public class ConversationHistoryService
 
     private void Prune()
     {
-        if (_idleExpiry == TimeSpan.MaxValue)
-            return;
+        if (_idleExpiry != TimeSpan.MaxValue)
+        {
+            var cutoff = DateTime.UtcNow - _idleExpiry;
+            foreach (var key in _sessions.Keys
+                .Where(k => _sessions[k].LastAccess < cutoff)
+                .ToList())
+                _sessions.Remove(key);
+        }
 
-        var cutoff = DateTime.UtcNow - _idleExpiry;
-        foreach (var key in _sessions.Keys
-            .Where(k => _sessions[k].LastAccess < cutoff)
-            .ToList())
-            _sessions.Remove(key);
+        while (_sessions.Count > MaxSessions)
+        {
+            var lruKey = _sessions.MinBy(kvp => kvp.Value.LastAccess).Key;
+            _sessions.Remove(lruKey);
+        }
     }
 
     private static void TrimToLimitUnsafe(Session session, int limit)

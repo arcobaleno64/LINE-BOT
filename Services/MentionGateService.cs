@@ -46,7 +46,7 @@ public static class MentionGateService
         // 從後面往前移除，避免 index 偏移
         foreach (var m in message.Mention.Mentionees.OrderByDescending(m => m.Index))
         {
-            if (m.IsSelf && m.Index >= 0 && m.Index + m.Length <= text.Length)
+            if (m.IsSelf && m.Index >= 0 && m.Length > 0 && m.Index + m.Length <= text.Length)
             {
                 text = text.Remove(m.Index, m.Length);
             }
