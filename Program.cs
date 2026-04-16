@@ -29,7 +29,7 @@ builder.Services.AddSingleton<ConversationHistoryService>(sp =>
         sp.GetRequiredService<IConversationSummaryQueue>(),
         sp.GetRequiredService<ILogger<ConversationHistoryService>>(),
         maxRounds: 15,
-        idleMinutes: -1));
+        idleMinutes: 480));
 builder.Services.AddSingleton<IWebhookMetrics, WebhookMetrics>();
 builder.Services.AddSingleton<IWebhookBackgroundQueue, WebhookBackgroundQueue>();
 builder.Services.AddSingleton<IWebhookReadinessService, WebhookReadinessService>();

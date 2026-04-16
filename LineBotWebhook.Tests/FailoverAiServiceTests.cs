@@ -347,7 +347,10 @@ public class FailoverAiServiceTests
     {
         return new RecordingHttpMessageHandler((request, ct) =>
         {
-            requests.Add(request.RequestUri!.ToString());
+            var uri = request.RequestUri!.ToString();
+            if (request.Headers.TryGetValues("x-goog-api-key", out var keys))
+                uri += (uri.Contains('?') ? "&" : "?") + $"key={keys.First()}";
+            requests.Add(uri);
             return Task.FromResult(responder(request));
         });
     }

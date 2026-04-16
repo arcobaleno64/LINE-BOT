@@ -16,7 +16,6 @@ public class DownloadsController(GeneratedFileService files) : ControllerBase
         if (file is null || !System.IO.File.Exists(file.FilePath))
             return NotFound();
 
-        var stream = System.IO.File.OpenRead(file.FilePath);
-        return File(stream, file.ContentType, file.DownloadFileName);
+        return PhysicalFile(file.FilePath, file.ContentType, file.DownloadFileName);
     }
 }

@@ -195,7 +195,10 @@ public class GeminiServiceTests
     {
         var handler = new RecordingHttpMessageHandler((request, ct) =>
         {
-            attempts.Add(request.RequestUri!.ToString());
+            var uri = request.RequestUri!.ToString();
+            if (request.Headers.TryGetValues("x-goog-api-key", out var keys))
+                uri += (uri.Contains('?') ? "&" : "?") + $"key={keys.First()}";
+            attempts.Add(uri);
             return Task.FromResult(responder(attempts.Count - 1));
         });
 

@@ -2,6 +2,7 @@ namespace LineBotWebhook.Services;
 
 public class AiResponseCacheService
 {
+    private const int MaxCacheEntries = 5000;
     private readonly object _lock = new();
     private readonly Dictionary<string, CacheEntry> _cache = new(StringComparer.Ordinal);
 
@@ -49,6 +50,12 @@ public class AiResponseCacheService
 
         foreach (var key in expiredKeys)
             _cache.Remove(key);
+
+        while (_cache.Count > MaxCacheEntries)
+        {
+            var oldest = _cache.MinBy(kvp => kvp.Value.ExpiresAtUtc).Key;
+            _cache.Remove(oldest);
+        }
     }
 
     private sealed record CacheEntry(string Value, DateTime ExpiresAtUtc);

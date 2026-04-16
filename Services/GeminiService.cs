@@ -154,7 +154,12 @@ MIME：{mimeType}
             if (response.IsSuccessStatusCode)
             {
                 using var doc = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
-                var candidate = doc.RootElement.GetProperty("candidates")[0];
+                if (!doc.RootElement.TryGetProperty("candidates", out var candidates) ||
+                    candidates.GetArrayLength() == 0)
+                {
+                    return "(AI 無回應)";
+                }
+                var candidate = candidates[0];
 
                 var parts = candidate.GetProperty("content").GetProperty("parts");
                 var sb = new StringBuilder();
@@ -185,8 +190,9 @@ MIME：{mimeType}
             }
 
             var errorBody = await response.Content.ReadAsStringAsync(ct);
+            var isQuota = IsQuotaOrResourceExhausted(errorBody);
             lastException = new HttpRequestException(
-                $"Gemini API error {(int)response.StatusCode}: {errorBody}",
+                $"Gemini API error {(int)response.StatusCode}{(isQuota ? " [quota_exhausted]" : "")}",
                 null,
                 response.StatusCode);
 
@@ -295,9 +301,10 @@ MIME：{mimeType}
 
     private Task<HttpResponseMessage> SendGenerateAsync(string model, string apiKey, object payload, CancellationToken ct)
     {
-        var url = $"{_endpoint.TrimEnd('/')}/{model}:generateContent?key={apiKey}";
+        var url = $"{_endpoint.TrimEnd('/')}/{model}:generateContent";
         var body = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
         var request = new HttpRequestMessage(HttpMethod.Post, url) { Content = body };
+        request.Headers.Add("x-goog-api-key", apiKey);
         return _http.SendAsync(request, ct);
     }
 

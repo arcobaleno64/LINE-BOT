@@ -95,7 +95,7 @@ MIME：{mimeType}
         };
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);
 
-        var response = await _http.SendAsync(request, ct);
+        using var response = await _http.SendAsync(request, ct);
         response.EnsureSuccessStatusCode();
 
         using var doc = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);

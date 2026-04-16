@@ -99,7 +99,7 @@ MIME：{mimeType}
         request.Headers.Add("x-api-key", _apiKey);
         request.Headers.Add("anthropic-version", "2023-06-01");
 
-        var response = await _http.SendAsync(request, ct);
+        using var response = await _http.SendAsync(request, ct);
         response.EnsureSuccessStatusCode();
 
         using var doc = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
