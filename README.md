@@ -3,7 +3,7 @@
 # LINE-BOT
 
 <p>
-  A modern LINE AI assistant backend built with ASP.NET Core, integrating text conversation, image understanding, document summarization, and cloud deployment capabilities.
+  A production-oriented LINE AI assistant backend built with ASP.NET Core, integrating text conversation, image understanding, document analysis, and cloud deployment workflows.
 </p>
 
 <p>
@@ -15,7 +15,7 @@
 </p>
 
 <p>
-  A more natural interaction experience, a more reliable document summarization pipeline, and a backend architecture closer to production-ready requirements.
+  A practical backend foundation with secure webhook handling, background processing, resilient AI routing, and observable operations.
 </p>
 
 **[繁體中文](README.zh-TW.md)** | English
@@ -26,15 +26,15 @@
 
 ## Product Overview
 
-LINE-BOT is an AI assistant backend service that uses the LINE Messaging API as its entry point, designed for the following needs:
+LINE-BOT is an AI assistant backend service that uses the LINE Messaging API as its entry point, designed for these goals:
 
 - Natural language interaction within LINE
 - Analyzing images uploaded by users
-- Organizing and summarizing document files
-- Reducing the risk of AI hallucination through a grounded document pipeline
-- Docker-based deployment to cloud platforms
+- Organizing and summarizing uploaded files
+- Reducing hallucination risk through a grounded document pipeline
+- Running a cloud-ready deployment flow with health verification
 
-It is not just a simple webhook receiver — it is a complete backend skeleton with event signature verification, background processing, AI replies, document organization, downloadable output, and stability protection mechanisms.
+It is more than a basic webhook receiver. It includes signature verification, queue-based background dispatch, provider failover support, downloadable outputs, and runtime safeguards for stability.
 
 ---
 
@@ -44,10 +44,10 @@ Most LINE Bot examples only do "receive a message, send a reply."
 
 This project goes several steps further:
 
-- Handles not only text but also images and files
-- Considers not only AI calls but also throttling, caching, cooldown, and fallback
-- Goes beyond summarization to produce organized, downloadable document results
-- Works not only locally but also considers cloud deployment and health checks
+- Handles text, image, file, and postback events through dedicated flows
+- Adds throttling, short-window merge, response cache, and cooldown protection
+- Uses queue + hosted worker to avoid request-thread fire-and-forget patterns
+- Adds CI test gate and post-deploy verification before considering release complete
 
 In other words, this repository is closer to an "extensible product foundation" rather than a minimal demo.
 
@@ -59,15 +59,15 @@ In other words, this repository is closer to an "extensible product foundation" 
   <tr>
     <td width="33%" valign="top">
       <h3>Text Interaction</h3>
-      <p>Receives user text messages and generates AI responses, optionally supplemented by web search for more complete answers.</p>
+      <p>Processes user text with mention-gate rules, AI replies, optional web search, and quick-reply suggestions.</p>
     </td>
     <td width="33%" valign="top">
       <h3>Image Understanding</h3>
-      <p>Supports receiving image messages, downloading the content, and passing it to AI for analysis to quickly extract key points and readable results.</p>
+      <p>Downloads image content and routes it to AI analysis with throttling and cooldown safeguards.</p>
     </td>
     <td width="33%" valign="top">
       <h3>Document Summarization</h3>
-      <p>Supports text-based files and text-extractable PDFs — performing content extraction, chunk organization, summary generation, and downloadable output.</p>
+      <p>Extracts document text, selects grounded chunks, generates summary output, and provides a downloadable result link.</p>
     </td>
   </tr>
 </table>
@@ -78,9 +78,9 @@ In other words, this repository is closer to an "extensible product foundation" 
 
 ### 1. Modern Webhook Architecture
 - Built on ASP.NET Core Web API
-- Verifies LINE request signatures
-- Places events into a background queue to reduce synchronous processing pressure
-- Dispatches to dedicated handlers based on message type
+- Verifies LINE request signatures before any meaningful processing
+- Enqueues events into a bounded background queue
+- Processes queue items in a hosted worker and dispatches by message/event type
 
 ### 2. Production-Oriented Stability Design
 - Per-user throttling
@@ -88,18 +88,18 @@ In other words, this repository is closer to an "extensible product foundation" 
 - AI quota exhaustion protection
 - Reply caching
 - Deduplication of repeated requests within short time windows
-- Readiness health check endpoint
+- Readiness endpoint with queue-aware operational snapshot
 
 ### 3. A More Trustworthy Document Processing Pipeline
 - Extracts document text content first
 - Performs chunk organization and grounding
 - Generates AI summary at the end
-- Reduces the risk of the model diverging from the source material
+- Produces downloadable markdown output with temporary tokenized access
 
 ### 4. Deployable, Extensible, and Maintainable
 - Dockerfile included
-- Suitable for deployment on Render, Railway, Azure Web App for Containers, and similar platforms
-- Clear structure, easy to extend with more handlers, AI providers, and document pipelines
+- CI workflow includes restore, test gate, image build, deploy trigger, and deployment verification
+- Clear structure for extending handlers, providers, and document capabilities
 
 ---
 
@@ -109,11 +109,11 @@ This project is particularly well-suited for the following scenarios:
 
 | Scenario | Description |
 |---|---|
-| Personal AI Assistant | Ask questions, get summaries and replies directly in LINE |
-| Team Knowledge Organization | Upload documents for quick extraction of key points, conclusions, and action items |
-| Image Content Interpretation | Send an image via LINE and quickly get analysis results |
-| Custom AI Bot Backend | Use as a skeleton for your own LINE AI service |
-| Cloud Deployment Showcase | Use as a production-ready, demo-ready backend portfolio project |
+| Personal AI Assistant | Ask questions and get concise responses directly in LINE |
+| Team Knowledge Organization | Upload files and quickly extract highlights, conclusions, and action items |
+| Image Content Interpretation | Send an image and receive structured key-point analysis |
+| Custom AI Bot Backend | Reuse as a secure, extensible backend foundation |
+| Deployment Validation Demo | Demonstrate test-gated CI and post-deploy health verification |
 
 ---
 
@@ -136,12 +136,15 @@ This project is particularly well-suited for the following scenarios:
 | `.xml` | Supported |
 | `.log` | Supported |
 | `.pdf` | Supported for text-extractable PDFs |
+| `.docx` | Supported |
+| `.xlsx` | Supported |
+| `.pptx` | Supported |
 
 ### Current Limitations
 - Scanned PDFs are not yet supported
 - Image-only PDFs are not yet supported
-- `.docx`, `.xlsx`, `.pptx` are not yet supported
 - Binary file summarization is not yet supported
+- Process-local runtime state is not shared across instances
 
 ---
 
@@ -155,16 +158,26 @@ POST /api/line/webhook
     |
     +-- Verify x-line-signature
     +-- Parse webhook events
-    +-- Enqueue to background queue
+    +-- Enqueue to bounded background queue
+            |
+            v
+      WebhookBackgroundService (hosted worker)
             |
             v
       Dispatcher
-        |       |       |
-        |       |       +-- FileMessageHandler
-        |       +---------- ImageMessageHandler
-        +------------------ TextMessageHandler
-                                |
-                                +-- AI Service
-                                +-- Web Search Service
-                                +-- Cache / Throttle / Backoff / Merge
+        |       |       |        \
+        |       |       |         +-- Postback handling
+        |       |       +------------ FileMessageHandler
+        |       +-------------------- ImageMessageHandler
+        +---------------------------- TextMessageHandler (mention gate in group/room)
+                                        |
+                                        +-- AI Failover Service
+                                        +-- Web Search Service (optional)
+                                        +-- Cache / Throttle / Backoff / Merge
+
+Other HTTP endpoints:
+- GET /
+- GET /health
+- GET /ready
+- GET /downloads/{token}
 ```
