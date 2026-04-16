@@ -58,6 +58,13 @@ builder.Services.AddSingleton<LineContentService>(sp =>
         sp.GetRequiredService<IHttpClientFactory>().CreateClient(),
         sp.GetRequiredService<IConfiguration>()));
 
+// ---------- DI: Loading Indicator ----------
+builder.Services.AddSingleton<LoadingIndicatorService>(sp =>
+    new LoadingIndicatorService(
+        sp.GetRequiredService<IHttpClientFactory>().CreateClient(),
+        sp.GetRequiredService<IConfiguration>(),
+        sp.GetRequiredService<ILogger<LoadingIndicatorService>>()));
+
 builder.Services.AddSingleton<GeneratedFileService>();
 builder.Services.AddSingleton<DocumentChunker>();
 builder.Services.AddSingleton<DocumentChunkSelector>();

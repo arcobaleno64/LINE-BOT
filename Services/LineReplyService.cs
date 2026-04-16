@@ -170,6 +170,99 @@ public class LineReplyService
             .ToArray();
     }
 
+    /// <summary>回覆 Flex Message</summary>
+    public async Task ReplyFlexAsync(string replyToken, string altText, object contents, WebhookLogContext? logContext, CancellationToken ct = default)
+    {
+        await ReplyFlexAsync(replyToken, altText, contents, quickReplies: null, logContext, ct);
+    }
+
+    /// <summary>回覆 Flex Message 並附 quick replies</summary>
+    public async Task ReplyFlexAsync(string replyToken, string altText, object contents, IReadOnlyList<string>? quickReplies, WebhookLogContext? logContext, CancellationToken ct = default)
+    {
+        var quickReplyItems = BuildQuickReplyItems(quickReplies);
+        var flexMessage = BuildFlexMessage(altText, contents, quickReplyItems);
+
+        var payload = new
+        {
+            replyToken,
+            messages = new[] { flexMessage }
+        };
+
+        var request = new HttpRequestMessage(HttpMethod.Post, ReplyUrl)
+        {
+            Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json")
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);
+
+        var replyFailedRecorded = false;
+        try
+        {
+            using var response = await _http.SendAsync(request, ct);
+            if (!response.IsSuccessStatusCode)
+            {
+                replyFailedRecorded = true;
+                _metrics.RecordReplyFailed((int)response.StatusCode);
+                _logger.LogError(
+                    "Failed to send LINE flex reply. EventId={EventId} HandlerType={HandlerType} MessageType={MessageType} SourceType={SourceType} StatusCode={StatusCode}",
+                    logContext?.EventId,
+                    logContext?.HandlerType,
+                    logContext?.MessageType,
+                    logContext?.SourceType,
+                    (int)response.StatusCode);
+                response.EnsureSuccessStatusCode();
+            }
+
+            _metrics.RecordReplySent(1);
+            _logger.LogInformation(
+                "Sent LINE flex reply. EventId={EventId} HandlerType={HandlerType} MessageType={MessageType} SourceType={SourceType}",
+                logContext?.EventId,
+                logContext?.HandlerType,
+                logContext?.MessageType,
+                logContext?.SourceType);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            if (!replyFailedRecorded)
+            {
+                var statusCode = ex is HttpRequestException httpEx && httpEx.StatusCode is HttpStatusCode code
+                    ? (int?)code
+                    : null;
+                _metrics.RecordReplyFailed(statusCode);
+                _logger.LogError(
+                    ex,
+                    "Failed to send LINE flex reply. EventId={EventId} HandlerType={HandlerType} MessageType={MessageType} SourceType={SourceType} StatusCode={StatusCode}",
+                    logContext?.EventId,
+                    logContext?.HandlerType,
+                    logContext?.MessageType,
+                    logContext?.SourceType,
+                    statusCode);
+            }
+
+            throw;
+        }
+    }
+
+    private static object BuildFlexMessage(string altText, object contents, IReadOnlyList<object> quickReplyItems)
+    {
+        if (quickReplyItems is { Count: > 0 })
+        {
+            return new
+            {
+                type = "flex",
+                altText,
+                contents,
+                quickReply = new { items = quickReplyItems }
+            };
+        }
+
+        return new
+        {
+            type = "flex",
+            altText,
+            contents
+        };
+    }
+
     private static IReadOnlyList<string> SplitIntoLineMessages(string text)
     {
         if (string.IsNullOrWhiteSpace(text))

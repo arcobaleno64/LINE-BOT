@@ -17,6 +17,7 @@ public class FileMessageHandler : IFileMessageHandler
     private readonly Ai429BackoffService _aiBackoff;
     private readonly IWebhookMetrics _metrics;
     private readonly ILogger<FileMessageHandler> _logger;
+    private readonly int _flexBodyMaxLength;
 
     public FileMessageHandler(
         IConfiguration config,
@@ -40,6 +41,7 @@ public class FileMessageHandler : IFileMessageHandler
         _aiBackoff = aiBackoff;
         _metrics = metrics;
         _logger = logger;
+        _flexBodyMaxLength = MessageHandlerHelpers.GetIntConfig(config, "App:FlexBodyMaxLength", 2000);
     }
 
     public async Task<bool> HandleAsync(LineEvent evt, string publicBaseUrl, CancellationToken ct)
@@ -48,7 +50,11 @@ public class FileMessageHandler : IFileMessageHandler
             return false;
 
         if (evt.Source?.Type is "group" or "room")
-            return true;
+        {
+            var allowGroupFiles = MessageHandlerHelpers.GetBoolConfig(_config, "App:AllowGroupFileHandling", defaultValue: true);
+            if (!allowGroupFiles)
+                return true;  // 功能關閉時靜默略過
+        }
 
         var userKey = MessageHandlerHelpers.BuildUserKey(evt);
         var logContext = WebhookLogContext.FromEvent(evt, HandlerType, userKey);
@@ -105,18 +111,29 @@ public class FileMessageHandler : IFileMessageHandler
             BuildSummaryFileContent(fileName, mimeType, aiReply));
         var downloadUrl = $"{publicBaseUrl}/downloads/{downloadToken}";
 
-        var replyText = $"""
+        var sanitizedReply = LineReplyTextFormatter.SanitizeForLine(aiReply);
+
+        if (sanitizedReply.Length <= _flexBodyMaxLength)
+        {
+            var bubble = FlexMessageBuilder.BuildDocumentSummaryBubble(fileName, sanitizedReply, downloadUrl);
+            var altText = FlexMessageBuilder.BuildAltText(sanitizedReply);
+            await _reply.ReplyFlexAsync(evt.ReplyToken!, altText, bubble, logContext, ct);
+        }
+        else
+        {
+            var replyText = $"""
 已完成整理：{fileName}
 
-{aiReply}
+{sanitizedReply}
 
 下載整理檔：
 {downloadUrl}
 
 提醒：下載連結會保留約 24 小時，重新部署後可能失效。
 """;
+            await _reply.ReplyAiTextAsync(evt.ReplyToken!, replyText, logContext, ct);
+        }
 
-        await _reply.ReplyAiTextAsync(evt.ReplyToken!, replyText, logContext, ct);
         return true;
     }
 
