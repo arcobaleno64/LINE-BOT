@@ -4,7 +4,7 @@ namespace LineBotWebhook.Services;
 
 public static class QuickReplySuggestionParser
 {
-    private const string StartTag = "\n\n<quick-replies>";
+    private const string StartTag = "<quick-replies>";
     private const string EndTag = "</quick-replies>";
     private const int MaxSuggestions = 3;
     private const int MaxSuggestionLength = 24;
@@ -14,18 +14,19 @@ public static class QuickReplySuggestionParser
         if (string.IsNullOrWhiteSpace(reply))
             return new QuickReplySuggestionResult("(AI 無回應)", []);
 
-        var startIndex = reply.LastIndexOf(StartTag, StringComparison.Ordinal);
-        if (startIndex < 0)
-            return new QuickReplySuggestionResult(reply.Trim(), []);
-
-        var cleanText = reply[..startIndex].TrimEnd();
-        var endIndex = reply.IndexOf(EndTag, startIndex, StringComparison.Ordinal);
+        var endIndex = reply.LastIndexOf(EndTag, StringComparison.Ordinal);
         if (endIndex < 0)
-            return new QuickReplySuggestionResult(cleanText, []);
+            return new QuickReplySuggestionResult(reply.Trim(), []);
 
         var afterEnd = reply[(endIndex + EndTag.Length)..];
         if (!string.IsNullOrWhiteSpace(afterEnd))
-            return new QuickReplySuggestionResult(cleanText, []);
+            return new QuickReplySuggestionResult(reply.Trim(), []);
+
+        var startIndex = reply.LastIndexOf(StartTag, endIndex, StringComparison.Ordinal);
+        if (startIndex < 0)
+            return new QuickReplySuggestionResult(reply.Trim(), []);
+
+        var cleanText = NormalizeTailPrefix(reply[..startIndex]);
 
         var payload = reply[(startIndex + StartTag.Length)..endIndex];
 
@@ -38,6 +39,17 @@ public static class QuickReplySuggestionParser
         {
             return new QuickReplySuggestionResult(cleanText, []);
         }
+    }
+
+    private static string NormalizeTailPrefix(string mainText)
+    {
+        var normalized = mainText.TrimEnd();
+
+        // Some models may emit literal "\\n\\n" before the metadata tag.
+        if (normalized.EndsWith("\\n\\n", StringComparison.Ordinal))
+            normalized = normalized[..^4].TrimEnd();
+
+        return normalized;
     }
 
     private static IReadOnlyList<string> SanitizeSuggestions(IEnumerable<string?>? suggestions)
