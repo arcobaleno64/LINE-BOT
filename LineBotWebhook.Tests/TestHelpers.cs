@@ -385,7 +385,12 @@ internal static class TestFactory
         if (doc is null)
             return null;
 
-        return doc.RootElement.GetProperty("messages")[0].GetProperty("text").GetString();
+        var msg = doc.RootElement.GetProperty("messages")[0];
+        if (msg.TryGetProperty("text", out var textProp))
+            return textProp.GetString();
+        if (msg.TryGetProperty("altText", out var altTextProp))
+            return altTextProp.GetString();
+        return null;
     }
 
     public static JsonDocument? GetLastReplyPayload(RecordingHttpMessageHandler handler)
@@ -500,12 +505,14 @@ internal static class TestFactory
         var actualMetrics = metrics ?? new FakeWebhookMetrics();
         var httpClient = new HttpClient(httpHandler);
         var reply = new LineReplyService(httpClient, config, actualMetrics, replyLogger ?? NullLogger<LineReplyService>.Instance);
+        var loading = new LoadingIndicatorService(httpClient, config, NullLogger<LoadingIndicatorService>.Instance);
 
         return new LineWebhookDispatcher(
             new StaticResultTextHandler(textHandled),
             new StaticResultImageHandler(imageHandled),
             new StaticResultFileHandler(fileHandled),
             reply,
+            loading,
             actualMetrics,
             logger ?? NullLogger<LineWebhookDispatcher>.Instance);
     }

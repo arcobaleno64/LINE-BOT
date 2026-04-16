@@ -486,10 +486,14 @@ public class CharacterizationTests
 
         await fileHandler.HandleAsync(evt, "https://unit.test", CancellationToken.None);
 
-        var replyText = TestFactory.GetLastReplyText(handler);
-        Assert.NotNull(replyText);
-        Assert.Contains("下載整理檔", replyText!);
-        Assert.Contains("https://unit.test/downloads/", replyText!);
+        // File handler now sends Flex for short responses
+        using var doc = TestFactory.GetLastReplyPayload(handler)!;
+        var msg = doc.RootElement.GetProperty("messages")[0];
+        Assert.Equal("flex", msg.GetProperty("type").GetString());
+        var footerButton = msg.GetProperty("contents").GetProperty("footer")
+            .GetProperty("contents").EnumerateArray().First();
+        Assert.Equal("下載整理檔", footerButton.GetProperty("action").GetProperty("label").GetString());
+        Assert.Contains("https://unit.test/downloads/", footerButton.GetProperty("action").GetProperty("uri").GetString()!);
     }
 
     [Fact]
@@ -528,22 +532,28 @@ public class CharacterizationTests
 
         await fileHandler.HandleAsync(evt, "https://unit.test", CancellationToken.None);
 
-        var replyText = TestFactory.GetLastReplyText(handler);
-        Assert.NotNull(replyText);
-        Assert.Contains("• 粗體摘要", replyText!, StringComparison.Ordinal);
-        Assert.Contains("連結 (https://example.com/ref)", replyText!, StringComparison.Ordinal);
-        Assert.DoesNotContain("#", replyText!, StringComparison.Ordinal);
-        Assert.DoesNotContain("**", replyText!, StringComparison.Ordinal);
+        // File handler now sends Flex for short responses
+        using var doc = TestFactory.GetLastReplyPayload(handler)!;
+        var msg = doc.RootElement.GetProperty("messages")[0];
+        Assert.Equal("flex", msg.GetProperty("type").GetString());
 
+        // Check the Flex body has sanitized text (no markdown)
+        var bodyText = msg.GetProperty("contents").GetProperty("body")
+            .GetProperty("contents").EnumerateArray()
+            .Last().GetProperty("text").GetString()!;
+        Assert.Contains("• 粗體摘要", bodyText, StringComparison.Ordinal);
+        Assert.Contains("連結 (https://example.com/ref)", bodyText, StringComparison.Ordinal);
+        Assert.DoesNotContain("#", bodyText, StringComparison.Ordinal);
+        Assert.DoesNotContain("**", bodyText, StringComparison.Ordinal);
+
+        // Extract download URL from Flex footer button
+        var footerButton = msg.GetProperty("contents").GetProperty("footer")
+            .GetProperty("contents").EnumerateArray().First();
+        var downloadUri = footerButton.GetProperty("action").GetProperty("uri").GetString()!;
         const string downloadPrefix = "https://unit.test/downloads/";
-        var tokenStart = replyText.IndexOf(downloadPrefix, StringComparison.Ordinal);
-        Assert.True(tokenStart >= 0);
-        tokenStart += downloadPrefix.Length;
-        var tokenEnd = replyText.IndexOfAny(['\r', '\n'], tokenStart);
-        if (tokenEnd < 0)
-            tokenEnd = replyText.Length;
+        Assert.StartsWith(downloadPrefix, downloadUri);
+        var token = downloadUri[downloadPrefix.Length..];
 
-        var token = replyText[tokenStart..tokenEnd].Trim();
         var generated = files.Get(token);
         Assert.NotNull(generated);
         var markdown = File.ReadAllText(generated!.FilePath);

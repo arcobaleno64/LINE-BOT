@@ -83,9 +83,12 @@ public class FileFallbackTests
         Assert.Contains("[片段", aiCall, StringComparison.Ordinal);
         Assert.Contains("請只根據我提供的文件片段整理內容", aiCall, StringComparison.Ordinal);
 
-        var replyText = TestFactory.GetLastReplyText(handler);
-        Assert.NotNull(replyText);
-        Assert.Contains("下載整理檔", replyText!, StringComparison.Ordinal);
+        using var doc = TestFactory.GetLastReplyPayload(handler)!;
+        var msg = doc.RootElement.GetProperty("messages")[0];
+        Assert.Equal("flex", msg.GetProperty("type").GetString());
+        var footerButton = msg.GetProperty("contents").GetProperty("footer")
+            .GetProperty("contents").EnumerateArray().First();
+        Assert.Equal("下載整理檔", footerButton.GetProperty("action").GetProperty("label").GetString());
     }
 
     private static string BuildLongDocument()
