@@ -570,7 +570,7 @@ public class OperationalObservabilityTests
         var logger = new TestLogger<FileMessageHandler>();
         var ai = new FakeAiService
         {
-            OnFileAsync = (name, mime, text, prompt, key, ct) =>
+            OnTextAsync = (message, key, ct, enableQuickReplies) =>
                 throw new HttpRequestException("rate limit file-token-123 extracted-secret-body", null, HttpStatusCode.TooManyRequests)
         };
         var handler = new RecordingHttpMessageHandler((request, ct) =>

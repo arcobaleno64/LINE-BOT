@@ -499,7 +499,7 @@ public class CharacterizationTests
         var files = new GeneratedFileService();
         var ai = new FakeAiService
         {
-            OnFileAsync = (name, mime, text, prompt, userKey, ct) =>
+            OnTextAsync = (message, userKey, ct, enableQuickReplies) =>
                 Task.FromResult("# 摘要\n* **粗體摘要**\n詳見[連結](https://example.com/ref)")
         };
         var handler = new RecordingHttpMessageHandler((request, ct) =>
