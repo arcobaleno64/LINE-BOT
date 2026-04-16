@@ -33,13 +33,13 @@ public class FileFallbackTests
     [Fact]
     public async Task FileHandler_WhenSemanticSelectorThrows_StillCompletesReply()
     {
-        var captured = new List<(string Context, string Prompt)>();
+        var captured = new List<string>();
         var config = TestFactory.BuildConfig();
         var ai = new FakeAiService
         {
-            OnFileAsync = (name, mime, text, prompt, userKey, ct) =>
+            OnTextAsync = (message, userKey, ct, enableQuickReplies) =>
             {
-                captured.Add((text, prompt));
+                captured.Add(message);
                 return Task.FromResult("整理完成");
             }
         };
@@ -80,8 +80,8 @@ public class FileFallbackTests
         await fileHandler.HandleAsync(evt, "https://unit.test", CancellationToken.None);
 
         var aiCall = Assert.Single(captured);
-        Assert.Contains("[片段", aiCall.Context, StringComparison.Ordinal);
-        Assert.Contains("請只根據我提供的文件片段整理內容", aiCall.Prompt, StringComparison.Ordinal);
+        Assert.Contains("[片段", aiCall, StringComparison.Ordinal);
+        Assert.Contains("請只根據我提供的文件片段整理內容", aiCall, StringComparison.Ordinal);
 
         var replyText = TestFactory.GetLastReplyText(handler);
         Assert.NotNull(replyText);

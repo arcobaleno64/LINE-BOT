@@ -174,13 +174,13 @@ public class DocumentPipelineTests
     [Fact]
     public async Task FileHandler_UsesChunkBasedPipeline_AndPreservesDownloadReply()
     {
-        var captured = new List<(string ExtractedText, string Prompt)>();
+        var captured = new List<string>();
         var config = TestFactory.BuildConfig();
         var ai = new FakeAiService
         {
-            OnFileAsync = (name, mime, text, prompt, userKey, ct) =>
+            OnTextAsync = (message, userKey, ct, enableQuickReplies) =>
             {
-                captured.Add((text, prompt));
+                captured.Add(message);
                 return Task.FromResult("整理完成");
             }
         };
@@ -216,10 +216,10 @@ public class DocumentPipelineTests
         await fileHandler.HandleAsync(evt, "https://unit.test", CancellationToken.None);
 
         var aiCall = Assert.Single(captured);
-        Assert.Contains("[片段", aiCall.ExtractedText, StringComparison.Ordinal);
-        Assert.NotEqual(longText, aiCall.ExtractedText);
-        Assert.Contains("請只根據我提供的文件片段整理內容", aiCall.Prompt, StringComparison.Ordinal);
-        Assert.Contains("重點", aiCall.Prompt, StringComparison.Ordinal);
+        Assert.Contains("[片段", aiCall, StringComparison.Ordinal);
+        Assert.NotEqual(longText, aiCall);
+        Assert.Contains("請只根據我提供的文件片段整理內容", aiCall, StringComparison.Ordinal);
+        Assert.Contains("重點", aiCall, StringComparison.Ordinal);
 
         var replyText = TestFactory.GetLastReplyText(handler);
         Assert.NotNull(replyText);
@@ -230,13 +230,13 @@ public class DocumentPipelineTests
     [Fact]
     public async Task FileHandler_WithQuestionPrompt_UsesQuestionMode_InRuntimePath()
     {
-        var captured = new List<(string ExtractedText, string Prompt)>();
+        var captured = new List<string>();
         var config = TestFactory.BuildConfig();
         var ai = new FakeAiService
         {
-            OnFileAsync = (name, mime, text, prompt, userKey, ct) =>
+            OnTextAsync = (message, userKey, ct, enableQuickReplies) =>
             {
-                captured.Add((text, prompt));
+                captured.Add(message);
                 return Task.FromResult("根據片段，截止日是 2026-03-31。");
             }
         };
@@ -281,10 +281,10 @@ public class DocumentPipelineTests
         await fileHandler.HandleAsync(evt, "https://unit.test", CancellationToken.None);
 
         var aiCall = Assert.Single(captured);
-        Assert.Contains("[片段", aiCall.ExtractedText, StringComparison.Ordinal);
-        Assert.Contains("截止日", aiCall.ExtractedText, StringComparison.Ordinal);
-        Assert.Contains("請只根據我提供的文件片段回答問題", aiCall.Prompt, StringComparison.Ordinal);
-        Assert.Contains("無法確認", aiCall.Prompt, StringComparison.Ordinal);
+        Assert.Contains("[片段", aiCall, StringComparison.Ordinal);
+        Assert.Contains("截止日", aiCall, StringComparison.Ordinal);
+        Assert.Contains("請只根據我提供的文件片段回答問題", aiCall, StringComparison.Ordinal);
+        Assert.Contains("無法確認", aiCall, StringComparison.Ordinal);
 
         var replyText = TestFactory.GetLastReplyText(handler);
         Assert.NotNull(replyText);

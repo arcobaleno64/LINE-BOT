@@ -84,8 +84,10 @@ public class FileMessageHandler : IFileMessageHandler
         var userPrompt = ResolveDocumentPrompt(evt);
         var preparedDocument = await _documents.PrepareAsync(fileName, mimeType, extractedText, userPrompt, ct);
 
+        var documentPrompt = $"{preparedDocument.GroundedPrompt}\n\n以下是文件片段：\n{preparedDocument.SelectedContext}";
+
         var aiReply = await MessageHandlerHelpers.TryGetAiReplyAsync(
-            () => _ai.GetReplyFromDocumentAsync(fileName, mimeType, preparedDocument.SelectedContext, preparedDocument.GroundedPrompt, userKey, ct),
+            () => _ai.GetReplyAsync(documentPrompt, userKey, ct),
             evt.ReplyToken!,
             HandlerType,
             _aiBackoff,
