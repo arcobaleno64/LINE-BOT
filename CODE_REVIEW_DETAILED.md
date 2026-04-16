@@ -4,6 +4,8 @@
 **審查範圍**：完整 ASP.NET Core 代碼庫  
 **審查方法**：自動化分析 + 手工審查 + AI 驅動審查  
 
+> 快照註記：本文件為審查當下的發現清單，部分項目可能已在後續提交中修正；請以最新程式碼與部署文件為準。
+
 ---
 
 ## 📋 審查發現摘要
@@ -53,7 +55,7 @@ _logger.LogInformation("User {UserId} throttled", userId);  // 完整 userId 洩
 **建議修復**（優先級 🔴 最高）：
 
 ```csharp
-// 建立敏感數據遮罵器
+// 建立敏感數據遮罩器
 internal static class SensitiveDataMasker
 {
     /// <summary>遮罩 userId（保留前後各 3 字符）</summary>
@@ -99,7 +101,7 @@ public void TestSensitiveDataMasking()
     var masked = SensitiveDataMasker.MaskUserId(userId);
     
     Assert.Equal("use***678", masked);
-    Assert.DoesNotContain("12345", masked);  // 驗證中間被遮罵
+    Assert.DoesNotContain("12345", masked);  // 驗證中間被遮罩
 }
 ```
 
@@ -804,7 +806,7 @@ dotnet list package --outdated
 
 ### 第一階段 (本周 - 4.5 小時)🔴
 
-1. **[#1] 敏感數據遮罵** (2-3h)
+1. **[#1] 敏感數據遮罩** (2-3h)
    - 創建 SensitiveDataMasker 類
    - 審計所有日誌記錄
    - 禁止記錄完整異常堆棧
@@ -836,7 +838,7 @@ dotnet list package --outdated
 
 ### 🔴 高優先（本周）
 
-- [ ] Issue #1: 敏感數據遮罵工具
+- [ ] Issue #1: 敏感數據遮罩工具
   - [ ] 創建 SensitiveDataMasker 類
   - [ ] 審計日誌記錄
   - [ ] 單元測試

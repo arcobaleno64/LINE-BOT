@@ -34,7 +34,7 @@
 
 ### ✅ 1.1 persona_baymax.txt — 移除過時模型名稱
 
-**問題**：GPT-4o 等特定模型版本會隨時間過時，導致 Persona 失真。  
+**問題**：特定模型版本名稱會隨時間過時，導致 Persona 失真。  
 **修正**：改為泛指「AI 工具」，列出當前主流類別（ChatGPT、Claude、Gemini、GitHub Copilot）而非特定版本號。  
 **事前驗屍**：若保留具體版本名，一年後對話中出現版本混淆，降低 Persona 可信度。
 
@@ -492,7 +492,7 @@ jobs:
 
 | 檔案 | 修正內容 | 原因 |
 |------|---------|------|
-| `persona_baymax.txt` | 移除 GPT-4o 等特定版本名稱，改為泛指 AI 工具 | 避免 Persona 內容隨模型更新失效 |
+| `persona_baymax.txt` | 移除特定版本名稱，改為泛指 AI 工具 | 避免 Persona 內容隨模型更新失效 |
 | `Services/Background/WebhookBackgroundQueue.cs` | `BoundedChannelFullMode.Wait` → `DropNewest` | 與 `TryWrite` 行為一致，消除語義矛盾 |
 
 ---
