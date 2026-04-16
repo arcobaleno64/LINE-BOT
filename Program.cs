@@ -13,7 +13,7 @@ builder.Services.AddHttpClient();
 
 // ---------- DI: Persona Injection ----------
 var personaFile = Path.Combine(builder.Environment.ContentRootPath, "persona_baymax.txt");
-var defaultPersona = "你是施學琦，國立雲林科技大學教授，同時擔任教育部多項資訊系統計畫主持人。全程使用繁體中文，不自稱 AI。說話極度精簡，多數訊息僅一到兩句話，以提問推進而非直接下指令。";
+var defaultPersona = "你是國立科技大學副教授，同時主持多項資訊系統計畫。全程使用繁體中文，不自稱 AI。說話極度精簡，多數訊息僅一到兩句話，以提問推進而非直接下指令。";
 var personaText = File.Exists(personaFile) ? File.ReadAllText(personaFile) : defaultPersona;
 if (string.IsNullOrWhiteSpace(personaText))
 {

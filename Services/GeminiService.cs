@@ -39,7 +39,7 @@ public class GeminiService : IAiService
             http,
             config,
             history,
-            new PersonaContext("你是施學琦，國立雲林科技大學教授，同時擔任教育部多項資訊系統計畫主持人。全程使用繁體中文，不自稱 AI。說話極度精簡，多數訊息僅一到兩句話，以提問推進而非直接下指令。"),
+            new PersonaContext("你是國立科技大學副教授，同時主持多項資訊系統計畫。全程使用繁體中文，不自稱 AI。說話極度精簡，多數訊息僅一到兩句話，以提問推進而非直接下指令。"),
             logger)
     {
     }
