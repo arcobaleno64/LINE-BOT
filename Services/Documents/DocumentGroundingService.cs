@@ -27,7 +27,7 @@ public sealed class DocumentGroundingService
         _logger = logger;
     }
 
-    public DocumentGroundingResult Prepare(string fileName, string mimeType, string extractedText, string? userPrompt = null)
+    public async Task<DocumentGroundingResult> PrepareAsync(string fileName, string mimeType, string extractedText, string? userPrompt = null, CancellationToken ct = default)
     {
         var chunks = _chunker.Chunk(extractedText);
         var mode = DetermineMode(userPrompt);
@@ -45,9 +45,7 @@ public sealed class DocumentGroundingService
         {
             try
             {
-                var semanticContext = _semanticSelector.SelectRelevantTextAsync(chunks, effectivePrompt, CancellationToken.None)
-                    .GetAwaiter()
-                    .GetResult();
+                var semanticContext = await _semanticSelector.SelectRelevantTextAsync(chunks, effectivePrompt, ct);
 
                 if (!string.IsNullOrWhiteSpace(semanticContext))
                 {

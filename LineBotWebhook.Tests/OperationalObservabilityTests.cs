@@ -609,7 +609,7 @@ public class OperationalObservabilityTests
     }
 
     [Fact]
-    public void DocumentSemanticFallbackWarning_DoesNotLeakPromptOrChunkText()
+    public async Task DocumentSemanticFallbackWarning_DoesNotLeakPromptOrChunkText()
     {
         var logger = new TestLogger<DocumentGroundingService>();
         var semantic = new FakeSemanticChunkSelector
@@ -624,7 +624,7 @@ public class OperationalObservabilityTests
             logger);
 
         var longText = string.Join("\n\n", Enumerable.Repeat("第一段敏感片段 " + new string('A', 400), 6));
-        var result = service.Prepare("a.txt", "text/plain", longText, "截止日是什麼？");
+        var result = await service.PrepareAsync("a.txt", "text/plain", longText, "截止日是什麼？");
 
         Assert.NotEmpty(result.SelectedChunks);
         var warning = Assert.Single(logger.Entries, x => x.Level == LogLevel.Warning && x.Message.Contains("Document semantic selection failed", StringComparison.Ordinal));
