@@ -63,7 +63,11 @@ jobs:
           fi
 
       - name: Verify deployment
-        if: ${{ secrets.RENDER_SERVICE_HOST != '' }}
         env:
           RENDER_SERVICE_HOST: ${{ secrets.RENDER_SERVICE_HOST }}
-        run: bash scripts/verify-deployment.sh "$RENDER_SERVICE_HOST"
+        run: |
+          if [ -n "$RENDER_SERVICE_HOST" ]; then
+            bash scripts/verify-deployment.sh "$RENDER_SERVICE_HOST"
+          else
+            echo "RENDER_SERVICE_HOST not set, skipping deployment verification"
+          fi
