@@ -8,10 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Consider future features and enhancements here
+- Render deployment verification now supports either a host name or a full `https://` URL via `RENDER_SERVICE_HOST`
 
 ### Changed
-- Updates to existing functionality
+- GitHub Actions deployment verification is now configured against `https://line-bot-u85p.onrender.com`
 
 ### Deprecated
 - Feature deprecation notices
@@ -20,7 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed functionality
 
 ### Fixed
-- Bug fixes and corrections
+- Docker image build no longer fails from a fixed UID collision when creating the non-root runtime user
+- Render deployment verification is now exercised successfully in GitHub Actions with `/health` = `200` and invalid webhook signature = `401`
 
 ### Security
 - Security-related changes
