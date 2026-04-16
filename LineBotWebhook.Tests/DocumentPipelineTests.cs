@@ -221,10 +221,13 @@ public class DocumentPipelineTests
         Assert.Contains("請只根據我提供的文件片段整理內容", aiCall, StringComparison.Ordinal);
         Assert.Contains("重點", aiCall, StringComparison.Ordinal);
 
-        var replyText = TestFactory.GetLastReplyText(handler);
-        Assert.NotNull(replyText);
-        Assert.Contains("下載整理檔", replyText!, StringComparison.Ordinal);
-        Assert.Contains("https://unit.test/downloads/", replyText!, StringComparison.Ordinal);
+        using var doc = TestFactory.GetLastReplyPayload(handler)!;
+        var msg = doc.RootElement.GetProperty("messages")[0];
+        Assert.Equal("flex", msg.GetProperty("type").GetString());
+        var footerButton = msg.GetProperty("contents").GetProperty("footer")
+            .GetProperty("contents").EnumerateArray().First();
+        Assert.Equal("下載整理檔", footerButton.GetProperty("action").GetProperty("label").GetString());
+        Assert.Contains("https://unit.test/downloads/", footerButton.GetProperty("action").GetProperty("uri").GetString()!, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -286,10 +289,13 @@ public class DocumentPipelineTests
         Assert.Contains("請只根據我提供的文件片段回答問題", aiCall, StringComparison.Ordinal);
         Assert.Contains("無法確認", aiCall, StringComparison.Ordinal);
 
-        var replyText = TestFactory.GetLastReplyText(handler);
-        Assert.NotNull(replyText);
-        Assert.Contains("下載整理檔", replyText!, StringComparison.Ordinal);
-        Assert.Contains("https://unit.test/downloads/", replyText!, StringComparison.Ordinal);
+        using var doc = TestFactory.GetLastReplyPayload(handler)!;
+        var msg = doc.RootElement.GetProperty("messages")[0];
+        Assert.Equal("flex", msg.GetProperty("type").GetString());
+        var footerButton = msg.GetProperty("contents").GetProperty("footer")
+            .GetProperty("contents").EnumerateArray().First();
+        Assert.Equal("下載整理檔", footerButton.GetProperty("action").GetProperty("label").GetString());
+        Assert.Contains("https://unit.test/downloads/", footerButton.GetProperty("action").GetProperty("uri").GetString()!, StringComparison.Ordinal);
     }
 
     private static string BuildLongDocument(int paragraphs, string marker)
