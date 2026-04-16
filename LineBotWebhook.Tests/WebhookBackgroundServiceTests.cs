@@ -86,6 +86,8 @@ public class WebhookBackgroundServiceTests
         using var worker = new WebhookBackgroundService(queue, dispatcher, logger);
 
         await worker.StartAsync(CancellationToken.None);
+        // Allow ExecuteAsync to complete its synchronous preamble on the thread pool.
+        await Task.Delay(200);
         await worker.StopAsync(CancellationToken.None);
 
         Assert.Contains(logger.Entries, x => x.Level == LogLevel.Information && x.Message.Contains("Webhook background worker started", StringComparison.Ordinal));
