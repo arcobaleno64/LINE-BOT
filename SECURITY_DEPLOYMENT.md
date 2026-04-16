@@ -1,4 +1,4 @@
-# 安全與部署配置改進指南
+# 安全與部署設定改進指南
 
 ## 📋 立即需要的改進
 
@@ -68,7 +68,7 @@ ENTRYPOINT ["/bin/sh", "-c", "ASPNETCORE_URLS=http://0.0.0.0:${PORT:-10000} exec
 
 | 變數 | 來源 | 機敏性 |
 |------|------|--------|
-| `ASPNETCORE_ENVIRONMENT` | 部署配置 | 公開 |
+| `ASPNETCORE_ENVIRONMENT` | 部署設定 | 公開 |
 | `Line__ChannelSecret` | GitHub Secret | 🔒 機敏 |
 | `Line__ChannelAccessToken` | GitHub Secret | 🔒 機敏 |
 | `Ai__Gemini__ApiKey` | GitHub Secret | 🔒 機敏 |
@@ -107,8 +107,8 @@ ENTRYPOINT ["/bin/sh", "-c", "ASPNETCORE_URLS=http://0.0.0.0:${PORT:-10000} exec
 ## 🚀 發佈前檢查清單
 
 - [ ] 更新 CHANGELOG.md
-- [ ] 創建 Git tag（git tag -a vX.Y.Z -m "Release vX.Y.Z"）
-- [ ] 創建 GitHub Release
+- [ ] 建立 Git tag（git tag -a vX.Y.Z -m "Release vX.Y.Z"）
+- [ ] 建立 GitHub Release
 - [ ] 更新 README 中的版本號
 - [ ] 驗證所有環境變數已設置
 - [ ] 測試部署驗證腳本
@@ -118,3 +118,4 @@ ENTRYPOINT ["/bin/sh", "-c", "ASPNETCORE_URLS=http://0.0.0.0:${PORT:-10000} exec
 - [Render Environment 文檔](https://docs.render.com/)
 - [Docker 安全最佳實踐](https://docs.docker.com/develop/security-best-practices/)
 - [ASP.NET Core 安全指南](https://learn.microsoft.com/en-us/aspnet/core/security/)
+

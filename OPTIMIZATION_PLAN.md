@@ -244,7 +244,7 @@ foreach (var provider in _providers.Where(p =>
 
 **驗收標準**：
 - `IsImageCapabilityPlaceholder` 方法可移除
-- 新增測試：配置 OpenAI 無 vision 能力時，image 請求自動 failover 到 Gemini
+- 新增測試：設定 OpenAI 無 vision 能力時，image 請求自動 failover 到 Gemini
 
 ---
 
@@ -500,3 +500,4 @@ jobs:
 **文件維護**：本方案應隨每次 Sprint 回顧更新，完成的項目移入 CHANGELOG，新發現的問題加入 Backlog。
 
 **下次審查**：2026-05-16
+

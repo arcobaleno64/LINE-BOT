@@ -18,7 +18,7 @@
 | **使用架構** | 8/10 | ✅ 很好 | 後台隊列、AI Failover 設計良好 |
 | **倉庫結構** | 8/10 | ✅ 很好 | 清晰的文件夾組織、文檔完整 |
 | **工作流成熟度** | 7.5/10 | ✅ 良好 | CI/CD 與部署驗證已建立，仍可加強安全掃描 |
-| **部署就緒度** | 8/10 | ✅ 很好 | Docker 就緒、Render 部署配置完善 |
+| **部署就緒度** | 8/10 | ✅ 很好 | Docker 就緒、Render 部署設定完善 |
 
 **整體成熟度等級**：🟡 **LEVEL 2-3**（中等成熟度，可生產）
 
@@ -34,7 +34,7 @@ LINE-BOT/
 │   ├── LineWebhookController.cs   # Webhook 端點
 │   └── DownloadsController.cs     # 檔案下載
 ├── Services/                       # ✅ 業務邏輯層
-│   ├── FailoverAiService.cs       # AI 提供商切換
+│   ├── FailoverAiService.cs       # AI 供應商切換
 │   ├── LineReplyService.cs        # LINE 回覆
 │   ├── Background/                # 背景任務
 │   ├── Documents/                 # 文件處理
@@ -49,14 +49,14 @@ LINE-BOT/
 ├── README.md / README.zh-TW.md    # ✅ 文檔
 ├── DEPLOYMENT_MANUAL.md           # ✅ 上線指南
 ├── AGENTS.md                      # ✅ 審查規則
-└── render.yaml                    # ✅ 部署配置
+└── render.yaml                    # ✅ 部署設定
 ```
 
 **優點**：
 - ✅ 清晰的分層架構（Presentation → Service → Data）
 - ✅ 職責單一，易於導航
 - ✅ 測試與代碼距離近
-- ✅ 腳本和配置文件分類明確
+- ✅ 腳本和設定文件分類明確
 
 **改進建議**：
 ```
@@ -68,7 +68,7 @@ LINE-BOT/
 │   └── API_REFERENCE.md            # API 文檔
 ├── samples/                        # 📁 示例代碼
 │   └── webhook-payload-examples.json
-└── config/                         # 📁 配置範例
+└── config/                         # 📁 設定範例
     ├── appsettings.example.json
     └── render.yaml.example
 ```
@@ -92,15 +92,15 @@ LINE-BOT/
 
 ---
 
-### 3. 配置管理（✅ 良好）
+### 3. 設定管理（✅ 良好）
 
 **現狀**：
 ```json
-配置層級：
-1. ✅ appsettings.json        (基礎配置)
+設定層級：
+1. ✅ appsettings.json        (基礎設定)
 2. ✅ appsettings.Development.json (開發覆蓋)
 3. ✅ render.yaml             (生產部署)
-4. ✅ 環境變數支持           (敏感數據)
+4. ✅ 環境變數支援           (敏感數據)
 ```
 
 **改進空間**：
@@ -108,7 +108,7 @@ LINE-BOT/
 // ❌ 當前：使用魔法字串
 config["Line:ChannelSecret"]
 
-// ✅ 建議：強型別配置
+// ✅ 建議：強型別設定
 public class LineConfiguration
 {
     public required string ChannelSecret { get; set; }
@@ -212,13 +212,13 @@ Render 自動部署
 - ✅ 完全自動化
 - ✅ 部署手冊詳細
 - ✅ 健康檢查端點就緒
-- ✅ Render 免費層支持
+- ✅ Render 免費層支援
 
 **風險** ⚠️：
 - ⚠️ 無回滾機制：部署失敗無自動回滾
 - ⚠️ 無部署驗證：上線後無自動驗證套件
 - ⚠️ 無金絲雀部署：無灰度發布機制
-- ⚠️ 无部署通知：無成功/失敗通知
+- ⚠️ 無部署通知：無成功/失敗通知
 
 **改進建議**：
 ```bash
@@ -232,7 +232,7 @@ healthCheckPath: /ready
 healthCheckInterval: 15
 maxOldReleases: 3
 
-# 3. 配置退出策略
+# 3. 設定退場策略
 preStop: |
   curl -X POST http://localhost:{PORT}/graceful-shutdown
 ```
@@ -252,7 +252,7 @@ HttpClient 模擬
 
 **缺陷**：
 - ⚠️ 無 Docker Compose 開發環境
-- ⚠️ 無 Hot Reload 配置
+- ⚠️ 無 Hot Reload 設定
 - ⚠️ 無開發初始化腳本
 
 **建議**：
@@ -334,7 +334,7 @@ _logger.LogError(
 ```
 
 **立即行動**（🔴 高優先）：
-1. 創建 `SensitiveDataMasker` 工具類
+1. 建立 `SensitiveDataMasker` 工具類
 2. 審計所有日誌記錄
 3. 禁止記錄異常完整堆棧
 
@@ -426,7 +426,7 @@ public async void TestReplyTokenExpired()
 | HttpClient 資源管理 | 中 | 1 小時 | 🔴 高 |
 | 敏感數據遮罩 | 高 | 2 小時 | 🔴 高 |
 | 異常類型細化 | 中 | 2 小時 | 🟡 中 |
-| 配置強型別化 | 低 | 1.5 小時 | 🔵 低 |
+| 設定強型別化 | 低 | 1.5 小時 | 🔵 低 |
 | AI Service 基類提取 | 低 | 2 小時 | 🔵 低 |
 | 文檔完善 | 低 | 3 小時 | 🔵 低 |
 
@@ -440,7 +440,7 @@ public async void TestReplyTokenExpired()
 
 ```
 [1] 敏感數據遮罩工具
-    - 創建 SensitiveDataMasker 類
+    - 建立 SensitiveDataMasker 類
     - 審計所有日誌記錄
     - 禁止堆棧追踪完整輸出
     ⏱️ 2-3 小時
@@ -473,8 +473,8 @@ public async void TestReplyTokenExpired()
     - 添加代碼掃描
     ⏱️ 2 小時
 
-[6] 強型別配置
-    - 創建配置 POCO 類
+[6] 強型別設定
+    - 建立設定 POCO 類
     - 替換魔法字串
     ⏱️ 1.5 小時
 
@@ -535,7 +535,7 @@ public async void TestReplyTokenExpired()
 | **架構設計** | 8/10 | 分層清晰，職責單一 |
 | **Webhook 安全** | 10/10 | 簽名驗證完善 |
 | **後台處理** | 8/10 | 隊列設計合理 |
-| **AI Failover** | 8/10 | 多提供商支持 |
+| **AI Failover** | 8/10 | 多供應商支援 |
 | **可測試性** | 8/10 | 依賴注入完善 |
 | **部署流程** | 8/10 | Docker 和 Render 就緒 |
 | **文檔質量** | 7/10 | 上線手冊完整 |
@@ -565,7 +565,7 @@ Week 1: 🔴 立即修正
 Week 2-3: 🟡 本迭代改進
 ├── [ ] 異常類型細化
 ├── [ ] CI/CD 增強
-├── [ ] 強型別配置
+├── [ ] 強型別設定
 └── [ ] 測試覆蓋擴展
 
 Month 2: 🔵 長期優化
@@ -602,7 +602,7 @@ Month 2: 🔵 長期優化
 
 ---
 
-## 📞 支持信息
+## 📞 支援信息
 
 | 項目 | 位置 |
 |------|------|
@@ -610,7 +610,7 @@ Month 2: 🔵 長期優化
 | 部署手冊 | `DEPLOYMENT_MANUAL.md` |
 | 上線檢查 | `FINAL_REVIEW_CHECKLIST.md` |
 | 功能說明 | `PR_DESCRIPTION.md` |
-| 代碼規範 | `Program.cs` (DI 配置範例) |
+| 代碼規範 | `Program.cs` (DI 設定範例) |
 
 ---
 
@@ -618,3 +618,4 @@ Month 2: 🔵 長期優化
 **評估時誤**：2026-04-16  
 **版本**：1.0  
 **下次評估建議**：2026-05-16
+
