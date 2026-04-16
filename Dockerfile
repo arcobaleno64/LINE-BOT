@@ -12,7 +12,15 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 WORKDIR /app
+
+# 建立非 root 用戶以提高安全性
+RUN useradd -m -u 1000 appuser && \
+    chown -R appuser:appuser /app
+
 COPY --from=build /app/publish .
+
+# 切換至非 root 用戶
+USER appuser
 
 EXPOSE 10000
 
