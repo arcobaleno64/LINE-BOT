@@ -144,21 +144,39 @@ LINE Developers Console 中請設定：
 
 ## 8. 已知營運限制
 
-- 背景處理仍是 fire-and-forget
-- 無正式 background queue
-- 無 distributed cache / throttle / merge / backoff
+- 對話歷史儲存於服務記憶體（process-local），服務重啟或 cold start 後消失
+- 無 distributed cache / throttle / merge / backoff（多實例部署下各自獨立）
 - 多實例部署下，各 instance 的記憶體狀態彼此不共享
 - `/health` 目前只有基本 liveness，不是完整 readiness
-- 檔案下載索引為單機記憶體狀態
-- 重新部署後下載連結可能失效
+- 檔案下載索引為單機記憶體狀態，重新部署後下載連結可能失效
+- Render free tier 在閒置 15 分鐘後停機，建議設定 UptimeRobot 每 5 分鐘 ping `/health`
 
-## 9. 本版邊界
+## 9. GitHub Actions Secrets 設定
 
-本版是第一階段重構完成版：
-- 重點是整理結構
-- 不改既有外部行為
+本倉庫的 CI/CD 流程（`.github/workflows/docker-publish.yml`）使用以下 secrets，需在 GitHub → Settings → Secrets and variables → Actions 中設定：
 
-不包含：
-- `Task.Run` 改 queue / `BackgroundService`
-- Redis 或其他共享狀態儲存
-- 更完整的 readiness / observability 架構
+| Secret 名稱 | 是否必填 | 說明 |
+|------------|---------|------|
+| `RENDER_DEPLOY_HOOK` | 必填 | Render Deploy Hook URL，觸發部署用 |
+| `RENDER_SERVICE_HOST` | 選填 | 部署後驗證用，填入如 `my-bot.onrender.com`（不含 https://） |
+
+若未設定 `RENDER_SERVICE_HOST`，部署驗證步驟會自動跳過。
+
+**取得 Render Deploy Hook**：Render Dashboard → 服務 → Settings → Deploy Hook → Copy URL
+
+### 手動執行部署驗證
+
+```bash
+bash scripts/verify-deployment.sh my-bot.onrender.com
+```
+
+驗證內容：
+1. `/health` 回 `200`（服務存活）
+2. `POST /api/line/webhook` 帶無效簽名回 `401`（簽名閘道完好）
+
+## 10. 本版邊界
+
+- 背景處理已改為 in-process queue（`System.Threading.Channels`，容量 256）
+- 對話記憶體、節流、快取、backoff 等狀態為 process-local
+- 不包含 Redis 或其他共享狀態儲存
+- 更完整的 readiness / observability 架構列於 OPTIMIZATION_PLAN.md

@@ -20,6 +20,9 @@ public sealed class WebhookBackgroundQueue : IWebhookBackgroundQueue
         _logger = logger;
         _channel = Channel.CreateBounded<WebhookQueueItem>(new BoundedChannelOptions(Capacity)
         {
+            // Wait mode causes TryWrite to return false immediately when the channel is full
+            // (TryWrite never blocks — only WriteAsync waits). The false return value is the
+            // signal we rely on to track and log dropped events in the else branch below.
             FullMode = BoundedChannelFullMode.Wait,
             SingleReader = true,
             SingleWriter = false
