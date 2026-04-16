@@ -160,7 +160,7 @@ LINE Developers Console 中請設定：
 | Secret 名稱 | 是否必填 | 說明 |
 |------------|---------|------|
 | `RENDER_DEPLOY_HOOK` | 必填 | Render Deploy Hook URL，觸發部署用 |
-| `RENDER_SERVICE_HOST` | 選填 | 部署後驗證用，填入如 `my-bot.onrender.com`（不含 https://） |
+| `RENDER_SERVICE_HOST` | 選填 | 部署後驗證用，可填 `my-bot.onrender.com` 或 `https://my-bot.onrender.com` |
 
 若未設定 `RENDER_SERVICE_HOST`，部署驗證步驟會自動跳過。
 
@@ -170,6 +170,7 @@ LINE Developers Console 中請設定：
 
 ```bash
 bash scripts/verify-deployment.sh my-bot.onrender.com
+bash scripts/verify-deployment.sh https://my-bot.onrender.com
 ```
 
 驗證內容：
