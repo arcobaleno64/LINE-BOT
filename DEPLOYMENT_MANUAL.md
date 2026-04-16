@@ -8,7 +8,7 @@
 
 - Webhook 接收：`POST /api/line/webhook`
 - 1 對 1：文字 / 圖片 / 檔案
-- 群組 / room：只處理被 mention 的文字
+- 群組 / room：文字需 mention；圖片預設忽略；檔案可由設定控制
 - 基本健康檢查：`GET /health`
 - 檔案下載：`GET /downloads/{token}`
 
@@ -39,6 +39,7 @@
 - `App:UserThrottleSecondsText`
 - `App:UserThrottleSecondsImage`
 - `App:UserThrottleSecondsFile`
+- `App:AllowGroupFileHandling`
 - `App:Ai429CooldownSeconds`
 - `App:AiQuotaCooldownSeconds`
 - `App:AiResponseCacheSeconds`
@@ -60,7 +61,7 @@ LINE Developers Console 中請設定：
 - 啟用 Webhook
 
 注意：
-- Bot 若在群組中使用，目前只處理 mention text
+- Bot 若在群組中使用：文字需 mention，圖片預設忽略，檔案可由設定控制
 - route 不要改動，否則 LINE 端會失效
 
 ## 5. 公開網址與下載功能
@@ -120,7 +121,8 @@ LINE Developers Console 中請設定：
 
 ### 圖片 / 檔案失敗
 檢查：
-- 是否為 1 對 1 聊天
+- 圖片是否在 1 對 1 聊天（群組圖片預設忽略）
+- 檔案若在群組，是否已啟用 `App:AllowGroupFileHandling`
 - Token 是否有效
 - 檔案格式是否支援
 - PDF 是否為可擷取文字的 PDF
