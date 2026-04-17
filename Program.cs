@@ -108,6 +108,15 @@ if (app.Environment.IsDevelopment())
     app.UseHttpsRedirection();
 }
 
+// ---------- Security: 驗證 App:PublicBaseUrl 已設定（避免 Host header injection）----------
+var startupLogger = app.Services.GetRequiredService<ILogger<Program>>();
+if (string.IsNullOrWhiteSpace(app.Configuration["App:PublicBaseUrl"]))
+{
+    startupLogger.LogWarning(
+        "App:PublicBaseUrl is not configured. Download links will fall back to request Host header, " +
+        "which is attacker-controlled. Set App:PublicBaseUrl in production to prevent host header injection.");
+}
+
 app.MapControllers();
 app.MapGet("/", () => Results.Ok("LINE Bot Webhook is running"));
 app.MapMethods("/", ["HEAD"], () => Results.Ok());

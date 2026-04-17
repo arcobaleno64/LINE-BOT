@@ -63,7 +63,6 @@ public class WebSearchService
 
         var payload = new
         {
-            api_key = _apiKey,
             query,
             search_depth = "basic",
             max_results = _maxResults,
@@ -75,6 +74,7 @@ public class WebSearchService
         {
             Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json")
         };
+        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _apiKey);
 
         using var response = await _http.SendAsync(request, ct);
         if (!response.IsSuccessStatusCode)
