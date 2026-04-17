@@ -30,7 +30,10 @@ public sealed class GeminiEmbeddingService(HttpClient http, IConfiguration confi
             }
         };
 
-        using var response = await _http.PostAsJsonAsync($"{endpoint}/{model}:embedContent?key={apiKey}", payload, cancellationToken: ct);
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"{endpoint}/{model}:embedContent");
+        request.Headers.Add("x-goog-api-key", apiKey);
+        request.Content = JsonContent.Create(payload);
+        using var response = await _http.SendAsync(request, ct);
         response.EnsureSuccessStatusCode();
 
         await using var stream = await response.Content.ReadAsStreamAsync(ct);

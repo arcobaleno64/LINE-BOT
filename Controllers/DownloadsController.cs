@@ -1,10 +1,12 @@
 using LineBotWebhook.Services;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace LineBotWebhook.Controllers;
 
 [ApiController]
 [Route("downloads")]
+[EnableRateLimiting("downloads-ip")]
 public class DownloadsController(GeneratedFileService files) : ControllerBase
 {
     private readonly GeneratedFileService _files = files;

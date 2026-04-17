@@ -22,6 +22,7 @@ public class OperationalObservabilityTests
             publicBaseUrlResolver: new PublicBaseUrlResolver(TestFactory.BuildConfig()),
             backgroundQueue: queue,
             metrics: metrics,
+            deduplication: new WebhookEventDeduplicationService(),
             logger: NullLogger<LineWebhookController>.Instance)
         {
             ControllerContext = new ControllerContext
@@ -49,6 +50,7 @@ public class OperationalObservabilityTests
             publicBaseUrlResolver: new PublicBaseUrlResolver(TestFactory.BuildConfig()),
             backgroundQueue: queue,
             metrics: metrics,
+            deduplication: new WebhookEventDeduplicationService(),
             logger: logger)
         {
             ControllerContext = new ControllerContext
@@ -79,6 +81,7 @@ public class OperationalObservabilityTests
             publicBaseUrlResolver: new PublicBaseUrlResolver(TestFactory.BuildConfig()),
             backgroundQueue: queue,
             metrics: metrics,
+            deduplication: new WebhookEventDeduplicationService(),
             logger: logger)
         {
             ControllerContext = new ControllerContext
@@ -105,6 +108,7 @@ public class OperationalObservabilityTests
             publicBaseUrlResolver: new PublicBaseUrlResolver(TestFactory.BuildConfig()),
             backgroundQueue: queue,
             metrics: metrics,
+            deduplication: new WebhookEventDeduplicationService(),
             logger: logger)
         {
             ControllerContext = new ControllerContext
@@ -133,6 +137,7 @@ public class OperationalObservabilityTests
             publicBaseUrlResolver: new PublicBaseUrlResolver(TestFactory.BuildConfig()),
             backgroundQueue: queue,
             metrics: metrics,
+            deduplication: new WebhookEventDeduplicationService(),
             logger: logger)
         {
             ControllerContext = new ControllerContext
@@ -169,6 +174,7 @@ public class OperationalObservabilityTests
             publicBaseUrlResolver: new PublicBaseUrlResolver(TestFactory.BuildConfig()),
             backgroundQueue: queue,
             metrics: metrics,
+            deduplication: new WebhookEventDeduplicationService(),
             logger: logger)
         {
             ControllerContext = new ControllerContext
@@ -208,6 +214,7 @@ public class OperationalObservabilityTests
             publicBaseUrlResolver: new PublicBaseUrlResolver(TestFactory.BuildConfig()),
             backgroundQueue: queue,
             metrics: metrics,
+            deduplication: new WebhookEventDeduplicationService(),
             logger: logger)
         {
             ControllerContext = new ControllerContext
@@ -258,6 +265,7 @@ public class OperationalObservabilityTests
             publicBaseUrlResolver: new PublicBaseUrlResolver(TestFactory.BuildConfig()),
             backgroundQueue: queue,
             metrics: metrics,
+            deduplication: new WebhookEventDeduplicationService(),
             logger: logger)
         {
             ControllerContext = new ControllerContext

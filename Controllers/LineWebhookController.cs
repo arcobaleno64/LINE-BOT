@@ -3,22 +3,26 @@ using System.Text.Json;
 using LineBotWebhook.Models;
 using LineBotWebhook.Services;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace LineBotWebhook.Controllers;
 
 [ApiController]
 [Route("api/line")]
+[EnableRateLimiting("webhook-ip")]
 public class LineWebhookController(
     IWebhookSignatureVerifier signatureVerifier,
     IPublicBaseUrlResolver publicBaseUrlResolver,
     IWebhookBackgroundQueue backgroundQueue,
     IWebhookMetrics metrics,
+    IWebhookEventDeduplicationService deduplication,
     ILogger<LineWebhookController> logger) : ControllerBase
 {
     private readonly IWebhookSignatureVerifier _signatureVerifier = signatureVerifier;
     private readonly IPublicBaseUrlResolver _publicBaseUrlResolver = publicBaseUrlResolver;
     private readonly IWebhookBackgroundQueue _backgroundQueue = backgroundQueue;
     private readonly IWebhookMetrics _metrics = metrics;
+    private readonly IWebhookEventDeduplicationService _deduplication = deduplication;
     private readonly ILogger<LineWebhookController> _logger = logger;
 
     /// <summary>LINE Messaging API Webhook Endpoint</summary>
@@ -65,12 +69,26 @@ public class LineWebhookController(
         var publicBaseUrl = _publicBaseUrlResolver.Resolve(Request);
         var enqueueSuccessCount = 0;
         var enqueueDroppedCount = 0;
+        var deduplicatedCount = 0;
         foreach (var evt in webhook.Events)
         {
+            if (!_deduplication.TryMarkSeen(evt.WebhookEventId))
+            {
+                deduplicatedCount++;
+                continue;
+            }
             if (_backgroundQueue.TryEnqueue(new WebhookQueueItem(evt, publicBaseUrl)))
                 enqueueSuccessCount++;
             else
                 enqueueDroppedCount++;
+        }
+
+        if (deduplicatedCount > 0)
+        {
+            _logger.LogInformation(
+                "Deduplicated duplicate webhook events. Count={Count} FirstEventId={FirstEventId}",
+                deduplicatedCount,
+                firstEventId);
         }
 
         if (enqueueDroppedCount > 0)

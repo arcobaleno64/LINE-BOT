@@ -5,6 +5,7 @@ using LineBotWebhook.Services;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Logging;
 
 namespace LineBotWebhook.Tests;
 
@@ -20,6 +21,7 @@ public class CharacterizationTests
             publicBaseUrlResolver: new PublicBaseUrlResolver(TestFactory.BuildConfig()),
             backgroundQueue: queue,
             metrics: metrics,
+            deduplication: new WebhookEventDeduplicationService(),
             logger: NullLogger<LineWebhookController>.Instance)
         {
             ControllerContext = new ControllerContext
@@ -44,6 +46,7 @@ public class CharacterizationTests
             publicBaseUrlResolver: new PublicBaseUrlResolver(TestFactory.BuildConfig()),
             backgroundQueue: queue,
             metrics: metrics,
+            deduplication: new WebhookEventDeduplicationService(),
             logger: NullLogger<LineWebhookController>.Instance)
         {
             ControllerContext = new ControllerContext
@@ -76,6 +79,7 @@ public class CharacterizationTests
             publicBaseUrlResolver: new PublicBaseUrlResolver(TestFactory.BuildConfig()),
             backgroundQueue: queue,
             metrics: metrics,
+            deduplication: new WebhookEventDeduplicationService(),
             logger: NullLogger<LineWebhookController>.Instance)
         {
             ControllerContext = new ControllerContext

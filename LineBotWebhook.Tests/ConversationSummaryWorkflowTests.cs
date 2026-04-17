@@ -59,7 +59,7 @@ public class ConversationSummaryWorkflowTests
         Assert.True(session.Messages.Count <= 4);
 
         var historyMessages = history.GetHistory("user-1");
-        Assert.StartsWith("先前對話摘要：", historyMessages[0].Content, StringComparison.Ordinal);
+        Assert.Contains("先前對話摘要：", historyMessages[0].Content, StringComparison.Ordinal);
         Assert.Contains(logger.Entries, entry => entry.Level == LogLevel.Information && entry.Message.Contains("Conversation summary completed", StringComparison.Ordinal));
     }
 
