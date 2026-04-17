@@ -1,6 +1,9 @@
 using LineBotWebhook.Services;
 using LineBotWebhook.Services.Documents;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.HttpOverrides;
+using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.RateLimiting;
 
 Environment.SetEnvironmentVariable("DOTNET_HOSTBUILDER__RELOADCONFIGONCHANGE", "false");
 Environment.SetEnvironmentVariable("ASPNETCORE_HOSTBUILDER__RELOADCONFIGONCHANGE", "false");
@@ -33,6 +36,7 @@ builder.Services.AddSingleton<ConversationHistoryService>(sp =>
 builder.Services.AddSingleton<IWebhookMetrics, WebhookMetrics>();
 builder.Services.AddSingleton<IWebhookBackgroundQueue, WebhookBackgroundQueue>();
 builder.Services.AddSingleton<IWebhookReadinessService, WebhookReadinessService>();
+builder.Services.AddSingleton<IWebhookEventDeduplicationService, WebhookEventDeduplicationService>();
 
 // ---------- DI: AI Service (主 provider + 自動 failover) ----------
 builder.Services.AddSingleton<IAiService>(sp =>
@@ -97,6 +101,46 @@ builder.Services.AddSingleton<WebSearchService>(sp =>
 // ---------- MVC Controllers ----------
 builder.Services.AddControllers();
 
+// ---------- ForwardedHeaders (Render reverse proxy) ----------
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    options.KnownIPNetworks.Clear();
+    options.KnownProxies.Clear(); // Trust all proxies — Render PaaS infrastructure
+});
+
+// ---------- Rate Limiting ----------
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+    // Webhook: 200 requests/min per IP (generous for LINE Platform's multiple servers)
+    options.AddPolicy("webhook-ip", httpContext =>
+    {
+        var ip = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        return RateLimitPartition.GetFixedWindowLimiter(ip, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 200,
+            Window = TimeSpan.FromMinutes(1),
+            QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+            QueueLimit = 0
+        });
+    });
+
+    // Downloads: 60 requests/min per IP
+    options.AddPolicy("downloads-ip", httpContext =>
+    {
+        var ip = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        return RateLimitPartition.GetFixedWindowLimiter(ip, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 60,
+            Window = TimeSpan.FromMinutes(1),
+            QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+            QueueLimit = 0
+        });
+    });
+});
+
 var app = builder.Build();
 app.Lifetime.ApplicationStarted.Register(() =>
 {
@@ -107,6 +151,9 @@ if (app.Environment.IsDevelopment())
 {
     app.UseHttpsRedirection();
 }
+
+app.UseForwardedHeaders();
+app.UseRateLimiter();
 
 // ---------- Security: 驗證 App:PublicBaseUrl 已設定（避免 Host header injection）----------
 var startupLogger = app.Services.GetRequiredService<ILogger<Program>>();

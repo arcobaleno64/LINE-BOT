@@ -1,0 +1,68 @@
+%%{init: {'theme': 'base', 'themeVariables': { 'background': '#ffffff', 'primaryColor': '#ffffff', 'lineColor': '#666666' }}}%%
+flowchart LR
+    classDef process fill:#6baed6,stroke:#2171b5,color:#000000
+    classDef store fill:#74c476,stroke:#238b45,color:#000000
+    classDef external fill:#fdae61,stroke:#d94701,color:#000000
+    classDef boundary fill:none,stroke:#e31a1c,stroke-width:3px,stroke-dasharray: 5 5,color:#000000
+    linkStyle default stroke:#666666,stroke-width:2px
+
+    LineUser(["LineUser"]):::external
+    LINEPlatform(["LINE Platform"]):::external
+    GeminiAPI(["Gemini API"]):::external
+    ClaudeAPI(["Claude API"]):::external
+    OpenAIAPI(["OpenAI API"]):::external
+    TavilyAPI(["Tavily API"]):::external
+
+    subgraph Application["Application (Render Web Service)"]
+        WC(("LineWebhook\nController")):::process
+        SV(("Signature\nVerifier")):::process
+        Q[("Background\nQueue [256]")]:::store
+        W(("Background\nWorker")):::process
+        D(("Webhook\nDispatcher")):::process
+        TH(("Text\nHandler")):::process
+        IH(("Image\nHandler")):::process
+        FH(("File\nHandler")):::process
+        FAI(("FailoverAi\nService")):::process
+        RS(("Line\nReply\nService")):::process
+        LC(("Line\nContent\nService")):::process
+        WS(("Web\nSearch\nService")):::process
+        GE(("Gemini\nEmbedding")):::process
+        DC(("Downloads\nController")):::process
+        HS[("Conversation\nHistory")]:::store
+        AC[("AI Response\nCache")]:::store
+        GF[("Generated\nFiles (disk)")]:::store
+    end
+
+    LineUser -->|"HTTPS POST /api/line/webhook"| WC
+    LineUser -->|"HTTPS GET /downloads/{token}"| DC
+    LINEPlatform -->|"Webhook delivery (x-line-signature)"| WC
+    WC -->|"VerifySignature(rawBody)"| SV
+    SV -->|"Valid/Invalid"| WC
+    WC -->|"TryEnqueue(event)"| Q
+    Q -->|"DequeueAllAsync()"| W
+    W -->|"DispatchAsync(event)"| D
+    D -->|"Text event"| TH
+    D -->|"Image event"| IH
+    D -->|"File event"| FH
+    TH -->|"Read/Write history"| HS
+    TH -->|"Read/Write cache"| AC
+    TH -->|"GenerateAsync(prompt)"| FAI
+    TH -->|"SearchAsync(query)"| WS
+    WS -->|"HTTPS (Bearer)"| TavilyAPI
+    IH -->|"GenerateAsync(prompt+image)"| FAI
+    IH -->|"DownloadContent(messageId)"| LC
+    FH -->|"DownloadContent(messageId)"| LC
+    FH -->|"GetEmbedding(text)"| GE
+    FH -->|"GenerateAsync(groundedPrompt)"| FAI
+    FH -->|"StoreFile()"| GF
+    LC -->|"HTTPS GET content (Bearer)"| LINEPlatform
+    GE -->|"HTTPS POST embedContent(?key=)"| GeminiAPI
+    FAI -->|"HTTPS POST chat (?key=)"| GeminiAPI
+    FAI -->|"HTTPS POST messages"| ClaudeAPI
+    FAI -->|"HTTPS POST completions"| OpenAIAPI
+    RS -->|"HTTPS POST /message/reply (Bearer)"| LINEPlatform
+    TH -->|"ReplyAsync(replyToken)"| RS
+    IH -->|"ReplyAsync(replyToken)"| RS
+    FH -->|"ReplyAsync(replyToken)"| RS
+    DC -->|"Get(token)"| GF
+    DC -->|"PhysicalFile response"| LineUser
