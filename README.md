@@ -24,6 +24,13 @@
 
 ---
 
+## Documentation Guide
+
+- General user guide: [USER_GUIDE.md](USER_GUIDE.md)
+- Non-engineer decision and document-review guide (Traditional Chinese): [USER_GUIDE_NON_ENGINEER.zh-TW.md](USER_GUIDE_NON_ENGINEER.zh-TW.md)
+
+---
+
 ## Product Overview
 
 LINE-BOT is an AI assistant backend service that uses the LINE Messaging API as its entry point, designed for these goals:
