@@ -24,6 +24,13 @@
 
 ---
 
+## 文件導覽
+
+- 一般使用者操作手冊：[USER_GUIDE.md](USER_GUIDE.md)
+- 非工程師決策與審稿手冊：[USER_GUIDE_NON_ENGINEER.zh-TW.md](USER_GUIDE_NON_ENGINEER.zh-TW.md)
+
+---
+
 ## 產品定位
 
 LINE-BOT 是一個以 LINE Messaging API 為入口的 AI 助理後端服務，目標如下：
