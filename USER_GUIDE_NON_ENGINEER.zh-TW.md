@@ -11,6 +11,9 @@
 目標只有一件事：
 用最少步驟，讓 Bot 幫你做「決策建議」與「嚴格審稿」。
 
+快速版本請看：
+- [USER_GUIDE_NON_ENGINEER_ONE_PAGE.zh-TW.md](USER_GUIDE_NON_ENGINEER_ONE_PAGE.zh-TW.md)
+
 ---
 
 ## 1. 你可以拿它做什麼
