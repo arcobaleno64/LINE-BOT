@@ -17,6 +17,8 @@ public class LineContentService
     internal const int MaxExtractedTextChars = 2_000_000;
     // OOXML zip part 解壓後尺寸上限（單一 part），用於在交付 OpenXML SDK 之前阻擋 zip-bomb。
     internal const long MaxOoxmlPartDecompressedBytes = 50_000_000;
+    // OOXML zip 之累計解壓尺寸上限，避免眾多合法 part 疊加為 GB 級工作量。
+    internal const long MaxOoxmlTotalDecompressedBytes = 200_000_000;
     // PDF 頁數上限，避免極端頁數造成 PdfPig 內部分配膨脹。
     internal const int MaxPdfPages = 500;
     private static readonly string OversizedTextMessage =
@@ -63,14 +65,21 @@ public class LineContentService
             throw new NotSupportedException($"檔案大小超過限制（上限 {limitMb} MB），無法處理。");
         }
 
-        var bytes = await response.Content.ReadAsByteArrayAsync(ct);
-
-        // ── 實際大小檢查（Header 可能不準時做最終確認）──
-        if (bytes.Length > _maxFileSizeBytes)
+        // ── Streaming 讀取並硬性截斷，避免 Content-Length 缺漏或不準時 buffer 全量內容 ──
+        await using var contentStream = await response.Content.ReadAsStreamAsync(ct);
+        using var buffer = new MemoryStream(capacity: Math.Min(_maxFileSizeBytes, 64 * 1024));
+        var chunk = new byte[8192];
+        int read;
+        while ((read = await contentStream.ReadAsync(chunk.AsMemory(), ct)) > 0)
         {
-            var limitMb = _maxFileSizeBytes / 1024 / 1024;
-            throw new NotSupportedException($"檔案大小超過限制（上限 {limitMb} MB），無法處理。");
+            if (buffer.Length + read > _maxFileSizeBytes)
+            {
+                var limitMb = _maxFileSizeBytes / 1024 / 1024;
+                throw new NotSupportedException($"檔案大小超過限制（上限 {limitMb} MB），無法處理。");
+            }
+            buffer.Write(chunk, 0, read);
         }
+        var bytes = buffer.ToArray();
 
         var mimeType = response.Content.Headers.ContentType?.MediaType ?? "application/octet-stream";
 
@@ -337,6 +346,7 @@ public class LineContentService
         using var stream = new MemoryStream(fileBytes, writable: false);
         using var archive = new ZipArchive(stream, ZipArchiveMode.Read, leaveOpen: false);
         var buffer = new byte[8192];
+        long cumulative = 0;
         foreach (var entry in archive.Entries)
         {
             // 先信 metadata；若已宣告超限即可省去解壓。
@@ -350,7 +360,9 @@ public class LineContentService
             while ((read = entryStream.Read(buffer, 0, buffer.Length)) > 0)
             {
                 actual += read;
-                if (actual > MaxOoxmlPartDecompressedBytes)
+                cumulative += read;
+                if (actual > MaxOoxmlPartDecompressedBytes
+                    || cumulative > MaxOoxmlTotalDecompressedBytes)
                     throw new NotSupportedException(OversizedPartMessage);
             }
         }
