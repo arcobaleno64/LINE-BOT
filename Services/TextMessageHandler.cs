@@ -15,6 +15,7 @@ public class TextMessageHandler : ITextMessageHandler
     private readonly UserRequestThrottleService _throttle;
     private readonly Ai429BackoffService _aiBackoff;
     private readonly IDateTimeIntentResponder _dateTimeIntentResponder;
+    private readonly AdvisoryContextStore _advisoryStore;
     private readonly IWebhookMetrics _metrics;
     private readonly ILogger<TextMessageHandler> _logger;
     private readonly int _flexBodyMaxLength;
@@ -29,6 +30,7 @@ public class TextMessageHandler : ITextMessageHandler
         UserRequestThrottleService throttle,
         Ai429BackoffService aiBackoff,
         IDateTimeIntentResponder dateTimeIntentResponder,
+        AdvisoryContextStore advisoryStore,
         IWebhookMetrics metrics,
         ILogger<TextMessageHandler> logger)
     {
@@ -41,6 +43,7 @@ public class TextMessageHandler : ITextMessageHandler
         _throttle = throttle;
         _aiBackoff = aiBackoff;
         _dateTimeIntentResponder = dateTimeIntentResponder;
+        _advisoryStore = advisoryStore;
         _metrics = metrics;
         _logger = logger;
         _flexBodyMaxLength = MessageHandlerHelpers.GetIntConfig(config, "App:FlexBodyMaxLength", 2000);
@@ -139,6 +142,16 @@ public class TextMessageHandler : ITextMessageHandler
 
         var textReply = await GetMergedTextReplyAsync(userKey, userText, ct, logContext);
         var parsedReply = QuickReplySuggestionParser.Parse(textReply);
+        var advisory = AdvisoryResponseParser.Parse(parsedReply.MainText);
+        if (advisory.IsStructured
+            && (advisory.Recommendations.Count > 0 || !string.IsNullOrWhiteSpace(advisory.Conclusion)))
+        {
+            var contextToken = _advisoryStore.Save(new AdvisoryContext(userKey, userText, advisory.Conclusion));
+            var bubble = FlexMessageBuilder.BuildAdvisoryBubble(advisory, contextToken, offerSearch: true);
+            var altText = FlexMessageBuilder.BuildAltText(advisory.PlainFallback);
+            await _reply.ReplyFlexAsync(evt.ReplyToken!, altText, bubble, parsedReply.Suggestions, logContext, ct);
+            return true;
+        }
         await _reply.ReplyAiTextAsync(evt.ReplyToken!, parsedReply.MainText, parsedReply.Suggestions, logContext, ct);
         return true;
     }

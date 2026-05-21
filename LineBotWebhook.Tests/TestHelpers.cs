@@ -431,6 +431,7 @@ internal static class TestFactory
             throttle ?? new UserRequestThrottleService(),
             backoff ?? new Ai429BackoffService(),
             responder,
+            new AdvisoryContextStore(),
             actualMetrics,
             logger ?? NullLogger<TextMessageHandler>.Instance);
     }
@@ -514,8 +515,15 @@ internal static class TestFactory
             reply,
             loading,
             config,
+            new NoopAdvisoryPostbackHandler(),
             actualMetrics,
             logger ?? NullLogger<LineWebhookDispatcher>.Instance);
+    }
+
+    internal sealed class NoopAdvisoryPostbackHandler : IAdvisoryPostbackHandler
+    {
+        public Task<bool> TryHandleAsync(LineEvent evt, IReadOnlyDictionary<string, string> parameters, CancellationToken ct)
+            => Task.FromResult(false);
     }
 
     public static LineReplyService CreateReplyService(
