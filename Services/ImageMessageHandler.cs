@@ -60,7 +60,17 @@ public class ImageMessageHandler : IImageMessageHandler
             return true;
         }
 
-        var (bytes, mimeType) = await _content.DownloadMessageContentAsync(evt.Message.Id, ct);
+        byte[] bytes;
+        string mimeType;
+        try
+        {
+            (bytes, mimeType) = await _content.DownloadMessageContentAsync(evt.Message.Id, ct: ct);
+        }
+        catch (NotSupportedException ex)
+        {
+            await _reply.ReplyTextAsync(evt.ReplyToken!, ex.Message, logContext, ct);
+            return true;
+        }
         var aiReply = await MessageHandlerHelpers.TryGetAiReplyAsync(
             () => _ai.GetReplyFromImageAsync(bytes, mimeType, "請幫我分析這張圖片重點。", userKey, ct),
             evt.ReplyToken!,

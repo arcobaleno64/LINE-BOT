@@ -4,6 +4,7 @@ public sealed class SemanticChunkSelector(IEmbeddingService embeddings) : ISeman
 {
     private const int MaxSelectedChunks = 4;
     private const int MaxContextCharacters = 5200;
+    internal const int MaxChunksToEmbed = 40;
     private readonly IEmbeddingService _embeddings = embeddings;
 
     public async Task<string> SelectRelevantTextAsync(IReadOnlyList<DocumentChunk> chunks, string userPrompt, CancellationToken ct = default)
@@ -14,10 +15,14 @@ public sealed class SemanticChunkSelector(IEmbeddingService embeddings) : ISeman
         if (chunks.Count == 1)
             return chunks[0].Text;
 
-        var queryEmbedding = await _embeddings.GetEmbeddingAsync(userPrompt, ct);
-        var scored = new List<(DocumentChunk Chunk, double Score)>(chunks.Count);
+        var candidates = chunks.Count <= MaxChunksToEmbed
+            ? chunks
+            : SampleEvenly(chunks, MaxChunksToEmbed);
 
-        foreach (var chunk in chunks)
+        var queryEmbedding = await _embeddings.GetEmbeddingAsync(userPrompt, ct);
+        var scored = new List<(DocumentChunk Chunk, double Score)>(candidates.Count);
+
+        foreach (var chunk in candidates)
         {
             var chunkEmbedding = await _embeddings.GetEmbeddingAsync(chunk.Text, ct);
             scored.Add((chunk, CosineSimilarity(queryEmbedding, chunkEmbedding)));
@@ -49,6 +54,18 @@ public sealed class SemanticChunkSelector(IEmbeddingService embeddings) : ISeman
         return string.Join(
             "\n\n",
             selected.Select(chunk => $"[片段 {chunk.Index + 1}]\n{chunk.Text}"));
+    }
+
+    private static IReadOnlyList<DocumentChunk> SampleEvenly(IReadOnlyList<DocumentChunk> chunks, int targetCount)
+    {
+        var indexes = new SortedSet<int>();
+        for (var i = 0; i < targetCount; i++)
+        {
+            var ratio = targetCount == 1 ? 0d : (double)i / (targetCount - 1);
+            indexes.Add((int)Math.Round(ratio * (chunks.Count - 1)));
+        }
+
+        return indexes.Select(index => chunks[index]).ToArray();
     }
 
     private static double CosineSimilarity(IReadOnlyList<float> left, IReadOnlyList<float> right)

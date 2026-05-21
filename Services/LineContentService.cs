@@ -12,6 +12,10 @@ public class LineContentService
 {
     private const string ContentUrlBase = "https://api-data.line.me/v2/bot/message";
     private const int DefaultMaxFileSizeBytes = 10 * 1024 * 1024; // 10 MB
+    // 抗壓縮炸彈：限制文件解壓後可累積之文字字元數，避免小型 .docx/.xlsx/.pptx 展開為極大 XML。
+    internal const int MaxExtractedTextChars = 2_000_000;
+    private static readonly string OversizedTextMessage =
+        $"文件解析後文字量過大（上限 {MaxExtractedTextChars / 10000} 萬字），無法處理。";
 
     private readonly HttpClient _http;
     private readonly string _accessToken;
@@ -25,12 +29,21 @@ public class LineContentService
         _maxFileSizeBytes = MessageHandlerHelpers.GetIntConfig(config, "App:MaxFileSizeBytes", DefaultMaxFileSizeBytes);
     }
 
-    public async Task<(byte[] Data, string MimeType)> DownloadMessageContentAsync(string messageId, CancellationToken ct = default)
+    public async Task<(byte[] Data, string MimeType)> DownloadMessageContentAsync(string messageId, long? expectedSize = null, CancellationToken ct = default)
     {
+        // ── 最早期大小檢查：使用 LINE 事件回報的 fileSize，避免發起 HTTP 下載 ──
+        if (expectedSize.HasValue && expectedSize.Value > _maxFileSizeBytes)
+        {
+            var limitMb = _maxFileSizeBytes / 1024 / 1024;
+            throw new NotSupportedException($"檔案大小超過限制（上限 {limitMb} MB），無法處理。");
+        }
+
         var request = new HttpRequestMessage(HttpMethod.Get, $"{ContentUrlBase}/{messageId}/content");
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);
 
-        var response = await _http.SendAsync(request, ct);
+        // ── ResponseHeadersRead 避免在大小檢查前先緩衝整個回應 ──
+        // 使用 using 確保拒絕路徑亦能釋放連線與內容串流。
+        using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
         response.EnsureSuccessStatusCode();
 
         // ── 早期大小檢查：從 Content-Length header 快速拒絕 ──
@@ -102,9 +115,12 @@ public class LineContentService
                 var text = page.Text;
                 if (!string.IsNullOrWhiteSpace(text))
                 {
+                    var trimmed = text.Trim();
+                    if (trimmed.Length > MaxExtractedTextChars || sb.Length + trimmed.Length > MaxExtractedTextChars)
+                        throw new NotSupportedException(OversizedTextMessage);
                     if (sb.Length > 0)
                         sb.AppendLine().AppendLine();
-                    sb.Append(text.Trim());
+                    sb.Append(trimmed);
                 }
             }
 
@@ -138,7 +154,12 @@ public class LineContentService
             {
                 var line = para.InnerText?.Trim();
                 if (!string.IsNullOrEmpty(line))
+                {
+                    // 單一段落即超過上限，直接拒絕，避免無謂 append。
+                    if (line.Length > MaxExtractedTextChars || sb.Length + line.Length > MaxExtractedTextChars)
+                        throw new NotSupportedException(OversizedTextMessage);
                     sb.AppendLine(line);
+                }
             }
 
             var text = sb.ToString().Trim();
@@ -168,12 +189,23 @@ public class LineContentService
             if (workbookPart is null)
                 throw new NotSupportedException("無法讀取 Excel 文件內容。");
 
-            // 建立 SharedStrings 查詢表
-            var sharedStrings = workbookPart.SharedStringTablePart?.SharedStringTable
-                .Elements<SharedStringItem>()
-                .Select((item, index) => (index, item.InnerText))
-                .ToDictionary(t => t.index, t => t.InnerText)
-                ?? [];
+            // 建立 SharedStrings 查詢表；同步累計字元數，超限即拒絕，避免大量字串先吞掉記憶體。
+            var sharedStrings = new Dictionary<int, string>();
+            var sharedStringsChars = 0L;
+            var sharedItems = workbookPart.SharedStringTablePart?.SharedStringTable
+                .Elements<SharedStringItem>();
+            if (sharedItems is not null)
+            {
+                var idx = 0;
+                foreach (var item in sharedItems)
+                {
+                    var value = item.InnerText;
+                    sharedStringsChars += value.Length;
+                    if (sharedStringsChars > MaxExtractedTextChars)
+                        throw new NotSupportedException(OversizedTextMessage);
+                    sharedStrings[idx++] = value;
+                }
+            }
 
             var sb = new StringBuilder();
             var sheetIndex = 0;
@@ -196,7 +228,11 @@ public class LineContentService
                         .Where(v => !string.IsNullOrWhiteSpace(v));
                     var rowText = string.Join("\t", cells);
                     if (!string.IsNullOrWhiteSpace(rowText))
+                    {
                         sb.AppendLine(rowText);
+                        if (sb.Length > MaxExtractedTextChars)
+                            throw new NotSupportedException(OversizedTextMessage);
+                    }
                 }
 
                 sb.AppendLine();
@@ -249,7 +285,11 @@ public class LineContentService
                     .Select(t => t.Text?.Trim())
                     .Where(t => !string.IsNullOrWhiteSpace(t));
                 foreach (var t in texts)
+                {
                     sb.AppendLine(t);
+                    if (sb.Length > MaxExtractedTextChars)
+                        throw new NotSupportedException(OversizedTextMessage);
+                }
                 sb.AppendLine();
             }
 
