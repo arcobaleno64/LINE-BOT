@@ -10,6 +10,7 @@ public class LineWebhookDispatcher : ILineWebhookDispatcher
     private readonly LineReplyService _reply;
     private readonly LoadingIndicatorService _loading;
     private readonly IConfiguration _config;
+    private readonly IAdvisoryPostbackHandler _advisoryPostback;
     private readonly IWebhookMetrics _metrics;
     private readonly ILogger<LineWebhookDispatcher> _logger;
 
@@ -20,6 +21,7 @@ public class LineWebhookDispatcher : ILineWebhookDispatcher
         LineReplyService reply,
         LoadingIndicatorService loading,
         IConfiguration config,
+        IAdvisoryPostbackHandler advisoryPostback,
         IWebhookMetrics metrics,
         ILogger<LineWebhookDispatcher> logger)
     {
@@ -29,6 +31,7 @@ public class LineWebhookDispatcher : ILineWebhookDispatcher
         _reply = reply;
         _loading = loading;
         _config = config;
+        _advisoryPostback = advisoryPostback;
         _metrics = metrics;
         _logger = logger;
     }
@@ -167,16 +170,14 @@ public class LineWebhookDispatcher : ILineWebhookDispatcher
 
         var parameters = ParsePostbackData(data);
 
+        if (await _advisoryPostback.TryHandleAsync(evt, parameters, ct))
+            return;
+
         var action = parameters.GetValueOrDefault("action", "");
-        switch (action)
-        {
-            default:
-                _logger.LogDebug(
-                    "Unhandled postback action. EventId={EventId} Action={Action}",
-                    evt.WebhookEventId,
-                    action);
-                break;
-        }
+        _logger.LogDebug(
+            "Unhandled postback action. EventId={EventId} Action={Action}",
+            evt.WebhookEventId,
+            action);
     }
 
     internal static Dictionary<string, string> ParsePostbackData(string data)

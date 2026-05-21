@@ -80,6 +80,8 @@ builder.Services.AddSingleton<UserRequestThrottleService>();
 builder.Services.AddSingleton<Ai429BackoffService>();
 builder.Services.AddSingleton<AiResponseCacheService>();
 builder.Services.AddSingleton<InFlightRequestMergeService>();
+builder.Services.AddSingleton<AdvisoryContextStore>();
+builder.Services.AddSingleton<IAdvisoryPostbackHandler, AdvisoryPostbackHandler>();
 builder.Services.AddSingleton<IWebhookSignatureVerifier>(sp =>
     new WebhookSignatureVerifier(
         sp.GetRequiredService<IConfiguration>()["Line:ChannelSecret"]
