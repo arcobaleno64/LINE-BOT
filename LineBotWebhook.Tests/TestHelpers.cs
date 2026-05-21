@@ -513,6 +513,7 @@ internal static class TestFactory
             new StaticResultFileHandler(fileHandled),
             reply,
             loading,
+            config,
             actualMetrics,
             logger ?? NullLogger<LineWebhookDispatcher>.Instance);
     }

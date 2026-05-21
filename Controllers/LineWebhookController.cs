@@ -25,14 +25,51 @@ public class LineWebhookController(
     private readonly IWebhookEventDeduplicationService _deduplication = deduplication;
     private readonly ILogger<LineWebhookController> _logger = logger;
 
+    // LINE webhook payloads are small (typically < 50 KB). 256 KB caps malicious
+    // pre-signature allocation; legitimate traffic is comfortably under.
+    private const long MaxWebhookBodyBytes = 256 * 1024;
+
     /// <summary>LINE Messaging API Webhook Endpoint</summary>
     [HttpPost("webhook")]
     public async Task<IActionResult> Webhook(CancellationToken ct)
     {
-        using var reader = new StreamReader(Request.Body, Encoding.UTF8);
-        var body = await reader.ReadToEndAsync(ct);
-        var bodyLength = Encoding.UTF8.GetByteCount(body);
         _metrics.RecordWebhookRequest();
+
+        if (Request.ContentLength is { } declared && declared > MaxWebhookBodyBytes)
+        {
+            _logger.LogWarning(
+                "Rejected webhook with oversize Content-Length before signature check. DeclaredBytes={DeclaredBytes}",
+                declared);
+            return StatusCode(StatusCodes.Status413PayloadTooLarge);
+        }
+
+        using var reader = new StreamReader(Request.Body, Encoding.UTF8);
+        var buffer = new char[4096];
+        var sb = new StringBuilder();
+        var byteEstimate = 0L;
+        int read;
+        while ((read = await reader.ReadAsync(buffer.AsMemory(), ct)) > 0)
+        {
+            sb.Append(buffer, 0, read);
+            // UTF-8 worst case ~3 bytes/char for CJK; chars*4 is a safe upper bound.
+            byteEstimate = sb.Length * 4L;
+            if (byteEstimate > MaxWebhookBodyBytes)
+            {
+                _logger.LogWarning(
+                    "Rejected webhook body that exceeded body cap during read. CapBytes={CapBytes}",
+                    MaxWebhookBodyBytes);
+                return StatusCode(StatusCodes.Status413PayloadTooLarge);
+            }
+        }
+        var body = sb.ToString();
+        var bodyLength = Encoding.UTF8.GetByteCount(body);
+        if (bodyLength > MaxWebhookBodyBytes)
+        {
+            _logger.LogWarning(
+                "Rejected webhook body that exceeded body cap after read. BodyBytes={BodyBytes}",
+                bodyLength);
+            return StatusCode(StatusCodes.Status413PayloadTooLarge);
+        }
 
         var signatureHeader = Request.Headers["x-line-signature"].ToString();
         if (!_signatureVerifier.Verify(body, signatureHeader))

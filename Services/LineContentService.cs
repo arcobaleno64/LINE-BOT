@@ -327,18 +327,32 @@ public class LineContentService
 
     // ── OOXML zip-bomb 前置防護 ─────────────────────────────────────
     /// <summary>
-    /// 在交付 DocumentFormat.OpenXml SDK 之前，以 ZipArchive 直接讀取每個 part 之
-    /// 預宣告解壓尺寸（ZipArchiveEntry.Length）。一旦超過 MaxOoxmlPartDecompressedBytes
-    /// 即拒絕，避免單一 XML part 在 DOM 解析階段 materialize 為巨大字串。
+    /// 在交付 DocumentFormat.OpenXml SDK 之前，先以 ZipArchive 對每個 part 進行
+    /// 解壓並計數實際讀出之 byte。央目錄宣告之 ZipArchiveEntry.Length 在 net10.0
+    /// 未經 CRC32 驗證即返回，惡意 zip 可篡改該欄位；故仍以 streaming read 來驗。
+    /// 任一 part 解壓後超過 MaxOoxmlPartDecompressedBytes 即拒絕。
     /// </summary>
     internal static void EnsureOoxmlPartSizesWithinLimit(byte[] fileBytes)
     {
         using var stream = new MemoryStream(fileBytes, writable: false);
         using var archive = new ZipArchive(stream, ZipArchiveMode.Read, leaveOpen: false);
+        var buffer = new byte[8192];
         foreach (var entry in archive.Entries)
         {
+            // 先信 metadata；若已宣告超限即可省去解壓。
             if (entry.Length > MaxOoxmlPartDecompressedBytes)
                 throw new NotSupportedException(OversizedPartMessage);
+
+            // 央目錄宣告未超限仍需 streaming 驗證，避免被偽造 Length 欺騙。
+            using var entryStream = entry.Open();
+            long actual = 0;
+            int read;
+            while ((read = entryStream.Read(buffer, 0, buffer.Length)) > 0)
+            {
+                actual += read;
+                if (actual > MaxOoxmlPartDecompressedBytes)
+                    throw new NotSupportedException(OversizedPartMessage);
+            }
         }
     }
 
