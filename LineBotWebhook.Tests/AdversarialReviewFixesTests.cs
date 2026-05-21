@@ -197,6 +197,25 @@ public class AdversarialReviewFixesTests
         LineContentService.EnsureOoxmlPartSizesWithinLimit(safe);
     }
 
+    // ── Self-audit: ConversationHistoryService.Append must prune so writes alone cannot
+    //                 grow _sessions beyond MaxSessions ──
+
+    [Fact]
+    public void ConversationHistory_AppendOnly_PrunesBeyondMaxSessions()
+    {
+        var history = new ConversationHistoryService(maxRounds: 1, idleMinutes: -1);
+
+        // MaxSessions=1000 internally; create 1500 distinct users via Append only.
+        for (var i = 0; i < 1500; i++)
+            history.Append($"user-{i}", "hi", "ok");
+
+        var snapshot = history.GetType()
+            .GetField("_sessions", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
+            .GetValue(history) as System.Collections.IDictionary;
+        Assert.NotNull(snapshot);
+        Assert.True(snapshot!.Count <= 1000, $"Expected sessions to be capped at 1000, got {snapshot.Count}.");
+    }
+
     private static byte[] BuildZipWithOversizedPart(int decompressedBytes)
     {
         using var ms = new MemoryStream();

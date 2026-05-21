@@ -105,6 +105,8 @@ public class ConversationHistoryService
             }
 
             TrimToLimitUnsafe(session, maxMessages);
+            // 純寫入路徑亦須剪除：避免高寫低讀情境下 _sessions 突破 MaxSessions。
+            Prune();
         }
     }
 
