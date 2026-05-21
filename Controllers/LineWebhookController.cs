@@ -109,23 +109,21 @@ public class LineWebhookController(
         var deduplicatedCount = 0;
         foreach (var evt in webhook.Events)
         {
-            // 先嘗試入列，再標記為已見：若 queue 已滿落入 drop 路徑，
-            // LINE 之後重送同一 webhookEventId 仍可獲得第二次入列機會。
+            // 先以 dedup 原子標記阻擋並行重複，避免「兩封同 eventId 同時入列、各自抓同一 replyToken」之競態。
+            if (!_deduplication.TryMarkSeen(evt.WebhookEventId))
+            {
+                deduplicatedCount++;
+                continue;
+            }
+
             if (_backgroundQueue.TryEnqueue(new WebhookQueueItem(evt, publicBaseUrl)))
             {
-                if (_deduplication.TryMarkSeen(evt.WebhookEventId))
-                {
-                    enqueueSuccessCount++;
-                }
-                else
-                {
-                    // 已見之事件——撤銷 enqueue 路徑無 API，但實務上 dedup 早於 enqueue 即可阻擋；
-                    // 此處之分歧僅在「先 enqueue 成功，後發現本來已被標記」這個競爭視窗發生。
-                    deduplicatedCount++;
-                }
+                enqueueSuccessCount++;
             }
             else
             {
+                // 入列失敗（queue 滿）即撤銷 dedup 標記，讓 LINE 之重送可再次嘗試入列。
+                _deduplication.Forget(evt.WebhookEventId);
                 enqueueDroppedCount++;
             }
         }

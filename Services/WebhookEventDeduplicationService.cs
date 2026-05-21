@@ -10,6 +10,13 @@ public interface IWebhookEventDeduplicationService
     /// Events with empty/null eventId are always treated as new (cannot be deduplicated).
     /// </summary>
     bool TryMarkSeen(string? eventId);
+
+    /// <summary>
+    /// Removes a previously marked eventId. Used when downstream processing of a
+    /// just-marked event fails (e.g., queue full) so that LINE's redelivery of the
+    /// same eventId can be re-enqueued instead of being silently swallowed.
+    /// </summary>
+    void Forget(string? eventId);
 }
 
 public sealed class WebhookEventDeduplicationService : IWebhookEventDeduplicationService, IDisposable
@@ -32,6 +39,17 @@ public sealed class WebhookEventDeduplicationService : IWebhookEventDeduplicatio
 
             _cache.Set(eventId, true, Ttl);
             return true; // New
+        }
+    }
+
+    public void Forget(string? eventId)
+    {
+        if (string.IsNullOrEmpty(eventId))
+            return;
+
+        lock (_gate)
+        {
+            _cache.Remove(eventId);
         }
     }
 
