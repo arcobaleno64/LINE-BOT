@@ -83,7 +83,9 @@ builder.Services.AddSingleton<InFlightRequestMergeService>();
 builder.Services.AddSingleton<IWebhookSignatureVerifier>(sp =>
     new WebhookSignatureVerifier(
         sp.GetRequiredService<IConfiguration>()["Line:ChannelSecret"]
-        ?? throw new InvalidOperationException("Missing Line:ChannelSecret")));
+        is { Length: > 0 } secret
+            ? secret
+            : throw new InvalidOperationException("Missing Line:ChannelSecret")));
 builder.Services.AddSingleton<IPublicBaseUrlResolver, PublicBaseUrlResolver>();
 builder.Services.AddSingleton<IDateTimeIntentResponder, DateTimeIntentResponder>();
 builder.Services.AddSingleton<ITextMessageHandler, TextMessageHandler>();

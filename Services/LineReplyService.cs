@@ -20,8 +20,10 @@ public class LineReplyService
     public LineReplyService(HttpClient http, IConfiguration config, IWebhookMetrics metrics, ILogger<LineReplyService> logger)
     {
         _http = http;
-        _accessToken = config["Line:ChannelAccessToken"]
-            ?? throw new InvalidOperationException("Missing Line:ChannelAccessToken");
+        var token = config["Line:ChannelAccessToken"];
+        if (string.IsNullOrWhiteSpace(token))
+            throw new InvalidOperationException("Missing Line:ChannelAccessToken");
+        _accessToken = token;
         _metrics = metrics;
         _logger = logger;
     }

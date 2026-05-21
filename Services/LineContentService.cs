@@ -31,8 +31,10 @@ public class LineContentService
     public LineContentService(HttpClient http, IConfiguration config)
     {
         _http = http;
-        _accessToken = config["Line:ChannelAccessToken"]
-            ?? throw new InvalidOperationException("Missing Line:ChannelAccessToken");
+        var token = config["Line:ChannelAccessToken"];
+        if (string.IsNullOrWhiteSpace(token))
+            throw new InvalidOperationException("Missing Line:ChannelAccessToken");
+        _accessToken = token;
         _maxFileSizeBytes = MessageHandlerHelpers.GetIntConfig(config, "App:MaxFileSizeBytes", DefaultMaxFileSizeBytes);
     }
 
