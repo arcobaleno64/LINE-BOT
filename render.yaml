@@ -18,6 +18,8 @@ services:
         sync: false
       - key: Line__ChannelAccessToken
         sync: false
+      - key: App__PublicBaseUrl
+        sync: false
       - key: Ai__Provider
         value: Gemini
       - key: Ai__Gemini__ApiKey

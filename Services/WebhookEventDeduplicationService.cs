@@ -15,6 +15,7 @@ public interface IWebhookEventDeduplicationService
 public sealed class WebhookEventDeduplicationService : IWebhookEventDeduplicationService, IDisposable
 {
     private readonly MemoryCache _cache = new(new MemoryCacheOptions());
+    private readonly Lock _gate = new();
     private static readonly TimeSpan Ttl = TimeSpan.FromSeconds(60);
 
     public bool TryMarkSeen(string? eventId)
@@ -22,11 +23,16 @@ public sealed class WebhookEventDeduplicationService : IWebhookEventDeduplicatio
         if (string.IsNullOrEmpty(eventId))
             return true; // Cannot deduplicate without an ID — treat as new
 
-        if (_cache.TryGetValue(eventId, out _))
-            return false; // Duplicate
+        // 鎖以保證 TryGetValue+Set 為原子操作：避免並行同 eventId 各自被視為新事件，
+        // 造成 replyToken 競態與 AI 呼叫重複。
+        lock (_gate)
+        {
+            if (_cache.TryGetValue(eventId, out _))
+                return false; // Duplicate
 
-        _cache.Set(eventId, true, Ttl);
-        return true; // New
+            _cache.Set(eventId, true, Ttl);
+            return true; // New
+        }
     }
 
     public void Dispose() => _cache.Dispose();

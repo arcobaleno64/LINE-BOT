@@ -4,6 +4,7 @@ namespace LineBotWebhook.Services;
 
 public sealed record WebhookQueueItem(LineEvent Event, string PublicBaseUrl)
 {
+    public DateTimeOffset EnqueuedAt { get; init; } = DateTimeOffset.UtcNow;
     public string? EventId => string.IsNullOrWhiteSpace(Event.WebhookEventId) ? null : Event.WebhookEventId;
     public string SourceType => Event.Source?.Type ?? "unknown";
     public string MessageType => Event.Message?.Type ?? "none";

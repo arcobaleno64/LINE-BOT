@@ -45,7 +45,10 @@ public sealed class DocumentGroundingService
         {
             try
             {
-                var semanticContext = await _semanticSelector.SelectRelevantTextAsync(chunks, effectivePrompt, ct);
+                // 大量片段時，先合併「lexical 已選 + 平均取樣」為候選，
+                // 確保 lexical 命中之片段不會因取樣而漏掉。
+                var semanticCandidates = BuildSemanticCandidates(chunks, lexicalSelectedChunks);
+                var semanticContext = await _semanticSelector.SelectRelevantTextAsync(semanticCandidates, effectivePrompt, ct);
 
                 if (!string.IsNullOrWhiteSpace(semanticContext))
                 {
@@ -86,6 +89,28 @@ public sealed class DocumentGroundingService
         return string.Join(
             "\n\n",
             chunks.Select(chunk => $"[片段 {chunk.Index + 1}]\n{chunk.Text}"));
+    }
+
+    private static IReadOnlyList<DocumentChunk> BuildSemanticCandidates(
+        IReadOnlyList<DocumentChunk> chunks,
+        IReadOnlyList<DocumentChunk> lexicalSelected)
+    {
+        var cap = SemanticChunkSelector.MaxChunksToEmbed;
+        if (chunks.Count <= cap)
+            return chunks;
+
+        var indexes = new SortedSet<int>(lexicalSelected.Select(chunk => chunk.Index));
+        var remaining = cap - indexes.Count;
+        for (var i = 0; i < remaining; i++)
+        {
+            var ratio = remaining == 1 ? 0d : (double)i / (remaining - 1);
+            indexes.Add((int)Math.Round(ratio * (chunks.Count - 1)));
+        }
+
+        return indexes
+            .Where(index => index >= 0 && index < chunks.Count)
+            .Select(index => chunks[index])
+            .ToArray();
     }
 
     private static IReadOnlyList<DocumentChunk> ResolveSelectedChunks(IReadOnlyList<DocumentChunk> chunks, string context)

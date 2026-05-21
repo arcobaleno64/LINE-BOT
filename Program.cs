@@ -102,11 +102,19 @@ builder.Services.AddSingleton<WebSearchService>(sp =>
 builder.Services.AddControllers();
 
 // ---------- ForwardedHeaders (Render reverse proxy) ----------
+// 僅在 Production（即 Render 環境）信任所有來源；在 Development／Test 維持預設嚴格驗證，
+// 避免本機或 CI 環境因偽造 X-Forwarded-* 而繞過 IP rate limiting。
+// ForwardLimit=1 限制僅信任最靠近的一層 proxy，降低 client 端注入 X-Forwarded-For 之放大效應。
+// 真正之 webhook 驗證由 LINE 簽章把關；rate limiting 為 best-effort 防濫用。
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
     options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
-    options.KnownIPNetworks.Clear();
-    options.KnownProxies.Clear(); // Trust all proxies — Render PaaS infrastructure
+    options.ForwardLimit = 1;
+    if (builder.Environment.IsProduction())
+    {
+        options.KnownIPNetworks.Clear();
+        options.KnownProxies.Clear(); // Trust Render PaaS edge; ForwardLimit=1 bounds spoofing scope
+    }
 });
 
 // ---------- Rate Limiting ----------

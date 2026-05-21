@@ -7,7 +7,8 @@ public static class QuickReplySuggestionParser
     private const string StartTag = "<quick-replies>";
     private const string EndTag = "</quick-replies>";
     private const int MaxSuggestions = 3;
-    private const int MaxSuggestionLength = 24;
+    // LINE quick-reply 按鈕 label 上限為 20 字元；超過會導致 API 驗證失敗。
+    private const int MaxSuggestionLength = 20;
 
     public static QuickReplySuggestionResult Parse(string reply)
     {

@@ -73,8 +73,19 @@ public class FileMessageHandler : IFileMessageHandler
             return true;
         }
 
-        var (bytes, mimeType) = await _content.DownloadMessageContentAsync(evt.Message.Id, ct);
         var fileName = evt.Message.FileName ?? "uploaded-file";
+
+        byte[] bytes;
+        string mimeType;
+        try
+        {
+            (bytes, mimeType) = await _content.DownloadMessageContentAsync(evt.Message.Id, evt.Message.FileSize, ct);
+        }
+        catch (NotSupportedException ex)
+        {
+            await _reply.ReplyTextAsync(evt.ReplyToken!, ex.Message, logContext, ct);
+            return true;
+        }
 
         string extractedText;
         try
