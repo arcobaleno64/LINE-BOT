@@ -19,6 +19,9 @@ public class WebSearchService
         @"(上網|網路|google|搜尋|search|查資料|查一下|幫我查|幫我找|最新|即時|新聞|消息|資訊)",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
+    // 限制單次搜尋回應之最大讀入長度，避免遠端服務回傳異常大型 payload 撐爆記憶體。
+    private const long MaxResponseBytes = 2 * 1024 * 1024;
+
     private readonly HttpClient _http;
     private readonly bool _enabled;
     private readonly string _apiKey;
@@ -76,11 +79,26 @@ public class WebSearchService
         };
         request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _apiKey);
 
-        using var response = await _http.SendAsync(request, ct);
+        using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
         if (!response.IsSuccessStatusCode)
             return new SearchOutcome(true, false, "目前無法連線到網路搜尋服務，請稍後再試。", string.Empty, []);
 
-        using var doc = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
+        if (response.Content.Headers.ContentLength is { } declaredLength && declaredLength > MaxResponseBytes)
+            return new SearchOutcome(true, false, "查詢回應過大，已略過。", string.Empty, []);
+
+        using var responseStream = await response.Content.ReadAsStreamAsync(ct);
+        await using var boundedStream = new BoundedReadStream(responseStream, MaxResponseBytes);
+        JsonDocument doc;
+        try
+        {
+            doc = await JsonDocument.ParseAsync(boundedStream, cancellationToken: ct);
+        }
+        catch (InvalidOperationException)
+        {
+            // BoundedReadStream 超限時拋出 InvalidOperationException。
+            return new SearchOutcome(true, false, "查詢回應過大，已略過。", string.Empty, []);
+        }
+        using var _doc = doc;
         if (!doc.RootElement.TryGetProperty("results", out var results) || results.ValueKind != JsonValueKind.Array)
             return new SearchOutcome(true, false, "查詢完成，但沒有取得可用的資料來源。", string.Empty, []);
 
@@ -155,4 +173,71 @@ public class WebSearchService
 
     private static bool ContainsAny(string text, params string[] keywords)
         => keywords.Any(k => text.Contains(k, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// 包裝下游 Stream 並在累計讀取超過上限時拋出 InvalidOperationException，
+    /// 用以阻擋遠端服務之異常巨大回應。
+    /// </summary>
+    private sealed class BoundedReadStream : Stream
+    {
+        private readonly Stream _inner;
+        private readonly long _limit;
+        private long _read;
+
+        public BoundedReadStream(Stream inner, long limit)
+        {
+            _inner = inner;
+            _limit = limit;
+        }
+
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position
+        {
+            get => _read;
+            set => throw new NotSupportedException();
+        }
+
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            var n = _inner.Read(buffer, offset, count);
+            Advance(n);
+            return n;
+        }
+
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            var n = await _inner.ReadAsync(buffer, cancellationToken);
+            Advance(n);
+            return n;
+        }
+
+        public override async Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+        {
+            var n = await _inner.ReadAsync(buffer.AsMemory(offset, count), cancellationToken);
+            Advance(n);
+            return n;
+        }
+
+        private void Advance(int n)
+        {
+            _read += n;
+            if (_read > _limit)
+                throw new InvalidOperationException("Bounded response stream exceeded byte limit.");
+        }
+
+        public override void Flush() => _inner.Flush();
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+                _inner.Dispose();
+            base.Dispose(disposing);
+        }
+    }
 }
