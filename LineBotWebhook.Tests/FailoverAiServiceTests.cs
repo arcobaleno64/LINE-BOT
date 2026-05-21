@@ -248,8 +248,9 @@ public class FailoverAiServiceTests
             },
             logger);
 
-        // 最後一個提供者 (Claude) 拋 NotSupportedException，便是 lastException。
-        await Assert.ThrowsAsync<NotSupportedException>(() =>
+        // FailoverAiService 偏好保留 actionable 例外：Gemini 429 之 HttpRequestException
+        // 應勝過後續 OpenAI/Claude 之 NotSupportedException。
+        await Assert.ThrowsAsync<HttpRequestException>(() =>
             service.GetReplyFromImageAsync([1, 2, 3], "image/png", "請分析這張圖", "u1", CancellationToken.None));
 
         Assert.DoesNotContain(requests, uri => uri.Contains("api.openai.com", StringComparison.Ordinal));

@@ -82,7 +82,9 @@ public class FailoverAiService : IAiService
                     GetStatusCode(ex),
                     IsQuotaOrResourceExhausted(ex),
                     ex.GetType().Name);
-                lastException = ex;
+                // 偏好保留更具操作意義之例外：HttpRequestException（含 429/5xx/quota 訊息）優先於
+                // NotSupportedException 等能力宣告類例外，避免下游無法依 429 觸發 backoff 與配額回覆。
+                lastException = PreferMoreActionable(lastException, ex);
             }
         }
 
@@ -90,6 +92,28 @@ public class FailoverAiService : IAiService
             throw lastException;
 
         throw new InvalidOperationException("AI call failed without a captured exception.");
+    }
+
+    private static Exception PreferMoreActionable(Exception? previous, Exception current)
+    {
+        if (previous is null)
+            return current;
+
+        // HttpRequestException 與其 inner 包含明確 HTTP 狀態碼／quota 訊息，回到呼叫端可依此觸發
+        // 429 backoff、quota cooldown、向使用者回覆對應訊息；NotSupportedException 僅代表
+        // 「此提供者不支援」，缺乏可操作性，故 previous 為 HTTP 類例外時不覆寫。
+        var previousActionable = IsActionable(previous);
+        var currentActionable = IsActionable(current);
+        if (previousActionable && !currentActionable)
+            return previous;
+        return current;
+    }
+
+    private static bool IsActionable(Exception ex)
+    {
+        if (ex is HttpRequestException)
+            return true;
+        return ex.InnerException is not null && IsActionable(ex.InnerException);
     }
 
     private static bool ShouldFailover(Exception ex)
