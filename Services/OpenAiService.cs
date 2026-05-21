@@ -47,10 +47,9 @@ public class OpenAiService : IAiService
 
     public Task<string> GetReplyFromImageAsync(byte[] imageBytes, string mimeType, string userPrompt, string userKey, CancellationToken ct = default)
     {
-        var prompt = string.IsNullOrWhiteSpace(userPrompt)
-            ? "使用者上傳了一張圖片，但目前提供者未啟用圖片解析。請禮貌說明可改用 Gemini，或請使用者補充文字描述後我再協助。"
-            : $"使用者上傳了一張圖片，補充需求：{userPrompt}。目前提供者未啟用圖片解析。請禮貌說明可改用 Gemini，或請使用者補充文字描述後我再協助。";
-        return GetReplyAsync(prompt, userKey, ct);
+        // 本提供者未啟用真實圖片解析；直接拋例外讓 FailoverAiService 接手下一個提供者，
+        // 避免將 placeholder 訊息寫入 ConversationHistoryService 而污染後續上下文。
+        throw new NotSupportedException("OpenAI image analysis is not enabled in this configuration.");
     }
 
     public Task<string> GetReplyFromDocumentAsync(string fileName, string mimeType, string extractedText, string userPrompt, string userKey, CancellationToken ct = default)

@@ -70,26 +70,18 @@ public class FailoverAiService : IAiService
             try
             {
                 var reply = await call(provider);
-                if (IsImageCapabilityPlaceholder(provider.Name, requestType, reply))
-                {
-                    _logger.LogWarning(
-                        "Provider {Provider} does not provide real image analysis for {RequestType}; trying next provider.",
-                        provider.Name,
-                        requestType);
-                    continue;
-                }
-
                 _logger.LogInformation("AI request ({RequestType}) served by provider {Provider}", requestType, provider.Name);
                 return reply;
             }
             catch (Exception ex) when (ShouldFailover(ex))
             {
                 _logger.LogWarning(
-                    "Provider {Provider} failed for {RequestType}; trying next provider. StatusCode={StatusCode} IsQuotaExhausted={IsQuotaExhausted}",
+                    "Provider {Provider} failed for {RequestType}; trying next provider. StatusCode={StatusCode} IsQuotaExhausted={IsQuotaExhausted} ExceptionType={ExceptionType}",
                     provider.Name,
                     requestType,
                     GetStatusCode(ex),
-                    IsQuotaOrResourceExhausted(ex));
+                    IsQuotaOrResourceExhausted(ex),
+                    ex.GetType().Name);
                 lastException = ex;
             }
         }
@@ -102,6 +94,15 @@ public class FailoverAiService : IAiService
 
     private static bool ShouldFailover(Exception ex)
     {
+        // 提供者宣告未啟用此能力（例如不支援圖片）：直接交給下一個提供者。
+        if (ex is NotSupportedException)
+            return true;
+
+        // 200 OK 但 JSON 結構非預期：JsonElement.GetProperty / GetString 等可能拋這幾類例外，
+        // 不應令背景 worker 直接失敗、回覆 token 無聲過期；改由失效轉移嘗試其他提供者。
+        if (ex is System.Text.Json.JsonException or KeyNotFoundException or InvalidOperationException)
+            return true;
+
         if (ex is HttpRequestException httpEx)
         {
             if (httpEx.StatusCode == HttpStatusCode.TooManyRequests)
@@ -196,24 +197,6 @@ public class FailoverAiService : IAiService
             || normalized.Contains("daily")
             || normalized.Contains("limit exceeded")
             || normalized.Contains("exceeded your current quota");
-    }
-
-    private static bool IsImageCapabilityPlaceholder(string providerName, string requestType, string reply)
-    {
-        if (!requestType.Equals("image", StringComparison.OrdinalIgnoreCase))
-            return false;
-
-        if (!providerName.Equals("OpenAI", StringComparison.OrdinalIgnoreCase)
-            && !providerName.Equals("Claude", StringComparison.OrdinalIgnoreCase))
-            return false;
-
-        if (string.IsNullOrWhiteSpace(reply))
-            return false;
-
-        var normalized = reply.ToLowerInvariant();
-        return normalized.Contains("未啟用圖片解析", StringComparison.Ordinal)
-            || normalized.Contains("改用 gemini", StringComparison.Ordinal)
-            || normalized.Contains("補充文字描述", StringComparison.Ordinal);
     }
 
     private sealed record ProviderEntry(string Name, IAiService Service);

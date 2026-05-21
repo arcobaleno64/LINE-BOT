@@ -220,20 +220,17 @@ public class FailoverAiServiceTests
     }
 
     [Fact]
-    public async Task ImagePath_PlaceholderResponses_AreNotTreatedAsSuccessfulAnalysis()
+    public async Task ImagePath_OpenAiAndClaude_ThrowNotSupportedAndAreFailedOverWithoutHttp()
     {
         var requests = new List<string>();
         var logger = new TestLogger<FailoverAiService>();
         var handler = CreateRoutingHandler(requests, request =>
         {
             var uri = request.RequestUri!.ToString();
+            // 僅 Gemini 會發出 HTTP；OpenAI/Claude 之圖片路徑直接拋例外，不應命中此 handler。
             return uri.Contains("generativelanguage.googleapis.com", StringComparison.Ordinal)
                 ? BuildGeminiError(HttpStatusCode.TooManyRequests, """{"error":{"message":"rate limit temporary"}}""")
-                : uri.Contains("api.openai.com", StringComparison.Ordinal)
-                    ? BuildOpenAiSuccess("抱歉，目前提供者未啟用圖片解析，建議改用 Gemini 或補充文字描述。")
-                    : uri.Contains("api.anthropic.com", StringComparison.Ordinal)
-                        ? BuildClaudeSuccess("抱歉，目前提供者未啟用圖片解析，建議改用 Gemini 或補充文字描述。")
-                        : throw new InvalidOperationException($"Unexpected uri: {uri}");
+                : throw new InvalidOperationException($"Unexpected uri: {uri}");
         });
 
         var service = CreateService(
@@ -251,13 +248,20 @@ public class FailoverAiServiceTests
             },
             logger);
 
-        await Assert.ThrowsAsync<HttpRequestException>(() =>
+        // 最後一個提供者 (Claude) 拋 NotSupportedException，便是 lastException。
+        await Assert.ThrowsAsync<NotSupportedException>(() =>
             service.GetReplyFromImageAsync([1, 2, 3], "image/png", "請分析這張圖", "u1", CancellationToken.None));
 
-        Assert.Equal(6, requests.Count);
-        Assert.Contains(requests, uri => uri.Contains("api.openai.com", StringComparison.Ordinal));
-        Assert.Contains(requests, uri => uri.Contains("api.anthropic.com", StringComparison.Ordinal));
-        Assert.Contains(logger.Entries, entry => entry.Message.Contains("does not provide real image analysis", StringComparison.Ordinal));
+        Assert.DoesNotContain(requests, uri => uri.Contains("api.openai.com", StringComparison.Ordinal));
+        Assert.DoesNotContain(requests, uri => uri.Contains("api.anthropic.com", StringComparison.Ordinal));
+        Assert.Contains(logger.Entries, entry =>
+            entry.Level == LogLevel.Warning
+            && entry.Properties.TryGetValue("Provider", out var p) && (string)p! == "OpenAI"
+            && entry.Properties.TryGetValue("ExceptionType", out var t) && (string)t! == "NotSupportedException");
+        Assert.Contains(logger.Entries, entry =>
+            entry.Level == LogLevel.Warning
+            && entry.Properties.TryGetValue("Provider", out var p) && (string)p! == "Claude"
+            && entry.Properties.TryGetValue("ExceptionType", out var t) && (string)t! == "NotSupportedException");
     }
 
     [Fact]
