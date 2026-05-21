@@ -176,6 +176,47 @@ public class AdversarialReviewFixesTests
         Assert.Contains("過大", ex.Message, StringComparison.Ordinal);
     }
 
+    // ── R5 MEDIUM: OOXML part decompressed-size pre-check rejects zip bombs before DOM parse ──
+
+    [Fact]
+    public void EnsureOoxmlPartSizes_OversizedPart_Throws()
+    {
+        var oversized = BuildZipWithOversizedPart(
+            (int)(LineContentService.MaxOoxmlPartDecompressedBytes + 1024));
+
+        var ex = Assert.Throws<NotSupportedException>(() =>
+            LineContentService.EnsureOoxmlPartSizesWithinLimit(oversized));
+
+        Assert.Contains("分件過大", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void EnsureOoxmlPartSizes_AllPartsUnderLimit_DoesNotThrow()
+    {
+        var safe = LineContentServiceTests_BuildBigDocx("ordinary content");
+        LineContentService.EnsureOoxmlPartSizesWithinLimit(safe);
+    }
+
+    private static byte[] BuildZipWithOversizedPart(int decompressedBytes)
+    {
+        using var ms = new MemoryStream();
+        using (var zip = new ZipArchive(ms, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            var entry = zip.CreateEntry("word/document.xml", CompressionLevel.Optimal);
+            using var stream = entry.Open();
+            // Highly compressible payload — small zip, huge decompressed size.
+            var buffer = new byte[8192];
+            var written = 0;
+            while (written < decompressedBytes)
+            {
+                var chunk = Math.Min(buffer.Length, decompressedBytes - written);
+                stream.Write(buffer, 0, chunk);
+                written += chunk;
+            }
+        }
+        return ms.ToArray();
+    }
+
     // ── MEDIUM: WebhookEventDeduplicationService is atomic under concurrency ──
 
     [Fact]

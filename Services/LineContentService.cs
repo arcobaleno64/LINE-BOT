@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using System.Net.Http.Headers;
 using System.Text;
 using DocumentFormat.OpenXml.Packaging;
@@ -14,8 +15,14 @@ public class LineContentService
     private const int DefaultMaxFileSizeBytes = 10 * 1024 * 1024; // 10 MB
     // 抗壓縮炸彈：限制文件解壓後可累積之文字字元數，避免小型 .docx/.xlsx/.pptx 展開為極大 XML。
     internal const int MaxExtractedTextChars = 2_000_000;
+    // OOXML zip part 解壓後尺寸上限（單一 part），用於在交付 OpenXML SDK 之前阻擋 zip-bomb。
+    internal const long MaxOoxmlPartDecompressedBytes = 50_000_000;
+    // PDF 頁數上限，避免極端頁數造成 PdfPig 內部分配膨脹。
+    internal const int MaxPdfPages = 500;
     private static readonly string OversizedTextMessage =
         $"文件解析後文字量過大（上限 {MaxExtractedTextChars / 10000} 萬字），無法處理。";
+    private static readonly string OversizedPartMessage =
+        $"文件解壓後內部分件過大（單檔上限 {MaxOoxmlPartDecompressedBytes / 1_000_000} MB），無法處理。";
 
     private readonly HttpClient _http;
     private readonly string _accessToken;
@@ -109,6 +116,10 @@ public class LineContentService
             using var stream = new MemoryStream(fileBytes);
             using var document = PdfDocument.Open(stream);
 
+            if (document.NumberOfPages > MaxPdfPages)
+                throw new NotSupportedException(
+                    $"PDF 頁數過多（上限 {MaxPdfPages} 頁），無法處理。");
+
             var sb = new StringBuilder();
             foreach (var page in document.GetPages())
             {
@@ -142,6 +153,7 @@ public class LineContentService
     {
         try
         {
+            EnsureOoxmlPartSizesWithinLimit(fileBytes);
             using var stream = new MemoryStream(fileBytes);
             using var wordDoc = WordprocessingDocument.Open(stream, isEditable: false);
 
@@ -182,6 +194,7 @@ public class LineContentService
     {
         try
         {
+            EnsureOoxmlPartSizesWithinLimit(fileBytes);
             using var stream = new MemoryStream(fileBytes);
             using var spreadsheet = SpreadsheetDocument.Open(stream, isEditable: false);
 
@@ -268,6 +281,7 @@ public class LineContentService
     {
         try
         {
+            EnsureOoxmlPartSizesWithinLimit(fileBytes);
             using var stream = new MemoryStream(fileBytes);
             using var presentation = PresentationDocument.Open(stream, isEditable: false);
 
@@ -306,6 +320,23 @@ public class LineContentService
         catch (Exception ex)
         {
             throw new NotSupportedException("PowerPoint 文件格式不支援或已損毀，無法解析。", ex);
+        }
+    }
+
+    // ── OOXML zip-bomb 前置防護 ─────────────────────────────────────
+    /// <summary>
+    /// 在交付 DocumentFormat.OpenXml SDK 之前，以 ZipArchive 直接讀取每個 part 之
+    /// 預宣告解壓尺寸（ZipArchiveEntry.Length）。一旦超過 MaxOoxmlPartDecompressedBytes
+    /// 即拒絕，避免單一 XML part 在 DOM 解析階段 materialize 為巨大字串。
+    /// </summary>
+    internal static void EnsureOoxmlPartSizesWithinLimit(byte[] fileBytes)
+    {
+        using var stream = new MemoryStream(fileBytes, writable: false);
+        using var archive = new ZipArchive(stream, ZipArchiveMode.Read, leaveOpen: false);
+        foreach (var entry in archive.Entries)
+        {
+            if (entry.Length > MaxOoxmlPartDecompressedBytes)
+                throw new NotSupportedException(OversizedPartMessage);
         }
     }
 
