@@ -109,22 +109,24 @@ public class LineWebhookController(
         var deduplicatedCount = 0;
         foreach (var evt in webhook.Events)
         {
-            // 先以 dedup 原子標記阻擋並行重複，避免「兩封同 eventId 同時入列、各自抓同一 replyToken」之競態。
-            if (!_deduplication.TryMarkSeen(evt.WebhookEventId))
+            // 在 dedup 鎖內原子完成 TryEnqueue：避免 mark→fail→Forget 與另一封 redelivery 之 mark 互動，
+            // 造成兩封皆未實質入列卻被視為已處理之 swallow 視窗。
+            var capturedEvt = evt;
+            var outcome = _deduplication.TryMarkSeenWithCommit(
+                evt.WebhookEventId,
+                () => _backgroundQueue.TryEnqueue(new WebhookQueueItem(capturedEvt, publicBaseUrl)));
+            switch (outcome)
             {
-                deduplicatedCount++;
-                continue;
-            }
-
-            if (_backgroundQueue.TryEnqueue(new WebhookQueueItem(evt, publicBaseUrl)))
-            {
-                enqueueSuccessCount++;
-            }
-            else
-            {
-                // 入列失敗（queue 滿）即撤銷 dedup 標記，讓 LINE 之重送可再次嘗試入列。
-                _deduplication.Forget(evt.WebhookEventId);
-                enqueueDroppedCount++;
+                case DedupCommitOutcome.Committed:
+                    enqueueSuccessCount++;
+                    break;
+                case DedupCommitOutcome.Duplicate:
+                    deduplicatedCount++;
+                    break;
+                case DedupCommitOutcome.CommitFailed:
+                default:
+                    enqueueDroppedCount++;
+                    break;
             }
         }
 

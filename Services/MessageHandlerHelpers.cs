@@ -108,6 +108,20 @@ internal static class MessageHandlerHelpers
             await reply.ReplyTextAsync(replyToken, "目前流量較高，稍後再試。", logContext, ct);
             return null;
         }
+        catch (NotSupportedException ex)
+        {
+            // FailoverAiService 已試遍所有提供者但無一支援此能力（例如圖片）。
+            // 至少回覆使用者，避免 replyToken 無聲過期。
+            logger.LogWarning(
+                "AI capability not supported by any configured provider. EventId={EventId} HandlerType={HandlerType} MessageType={MessageType} UserKeyFingerprint={UserKeyFingerprint} ExceptionType={ExceptionType}",
+                logContext.EventId,
+                logContext.HandlerType,
+                logContext.MessageType,
+                logContext.UserKeyFingerprint,
+                ex.GetType().Name);
+            await reply.ReplyTextAsync(replyToken, "此訊息類型目前無可用之 AI 服務可處理，請改以文字訊息再試。", logContext, ct);
+            return null;
+        }
     }
 
     public static int GetIntConfig(IConfiguration config, string key, int fallback)
