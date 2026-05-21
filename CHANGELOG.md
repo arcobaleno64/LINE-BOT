@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - GitHub Actions deployment verification is now configured against `https://line-bot-u85p.onrender.com`
+- Upgraded NuGet dependencies: `DocumentFormat.OpenXml` 3.2.0 → 3.5.1, `PdfPig` 0.1.13 → 0.1.14
+- Upgraded test dependencies: `Microsoft.AspNetCore.Mvc.Testing` 10.0.0 → 10.0.8, `Microsoft.NET.Test.Sdk` 17.14.1 → 18.5.1, `coverlet.collector` 6.0.4 → 10.0.1, `xunit.runner.visualstudio` 3.1.4 → 3.1.5
+- Upgraded GitHub Actions: `actions/checkout` v5 → v6, `actions/setup-dotnet` v4 → v5, `docker/setup-buildx-action` v3 → v4, `docker/build-push-action` v6 → v7
 
 ### Deprecated
 - Feature deprecation notices
