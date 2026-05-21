@@ -10,8 +10,9 @@ public sealed class GeminiEmbeddingService(HttpClient http, IConfiguration confi
 
     public async Task<IReadOnlyList<float>> GetEmbeddingAsync(string text, CancellationToken ct = default)
     {
-        var apiKey = _config["Ai:Gemini:ApiKey"]
-            ?? throw new InvalidOperationException("Missing Ai:Gemini:ApiKey");
+        var apiKey = _config["Ai:Gemini:ApiKey"];
+        if (string.IsNullOrWhiteSpace(apiKey))
+            throw new InvalidOperationException("Missing Ai:Gemini:ApiKey");
         var endpoint = (_config["Ai:Gemini:EmbeddingEndpoint"] ?? "https://generativelanguage.googleapis.com/v1beta/models").TrimEnd('/');
         var model = _config["Ai:Gemini:EmbeddingModel"] ?? "text-embedding-004";
 

@@ -17,7 +17,10 @@ public class OpenAiService : IAiService
     public OpenAiService(HttpClient http, IConfiguration config, ConversationHistoryService history, PersonaContext persona)
     {
         _http     = http;
-        _apiKey   = config["Ai:OpenAI:ApiKey"] ?? throw new InvalidOperationException("Missing Ai:OpenAI:ApiKey");
+        var apiKey = config["Ai:OpenAI:ApiKey"];
+        if (string.IsNullOrWhiteSpace(apiKey))
+            throw new InvalidOperationException("Missing Ai:OpenAI:ApiKey");
+        _apiKey   = apiKey;
         _model    = config["Ai:OpenAI:Model"] ?? "gpt-4o";
         _endpoint = config["Ai:OpenAI:Endpoint"] ?? "https://api.openai.com/v1/chat/completions";
         _maxOutputTokens = int.TryParse(config["Ai:MaxOutputTokens"], out var parsed) ? parsed : 4096;
