@@ -16,7 +16,10 @@ public class ClaudeService : IAiService
     public ClaudeService(HttpClient http, IConfiguration config, ConversationHistoryService history, PersonaContext persona)
     {
         _http     = http;
-        _apiKey   = config["Ai:Claude:ApiKey"] ?? throw new InvalidOperationException("Missing Ai:Claude:ApiKey");
+        var apiKey = config["Ai:Claude:ApiKey"];
+        if (string.IsNullOrWhiteSpace(apiKey))
+            throw new InvalidOperationException("Missing Ai:Claude:ApiKey");
+        _apiKey   = apiKey;
         _model    = config["Ai:Claude:Model"] ?? "claude-sonnet-4-20250514";
         _endpoint = config["Ai:Claude:Endpoint"] ?? "https://api.anthropic.com/v1/messages";
         _maxOutputTokens = int.TryParse(config["Ai:MaxOutputTokens"], out var parsed) ? parsed : 4096;

@@ -17,8 +17,10 @@ public class LoadingIndicatorService
     public LoadingIndicatorService(HttpClient http, IConfiguration config, ILogger<LoadingIndicatorService> logger)
     {
         _http = http;
-        _accessToken = config["Line:ChannelAccessToken"]
-            ?? throw new InvalidOperationException("Missing Line:ChannelAccessToken");
+        var token = config["Line:ChannelAccessToken"];
+        if (string.IsNullOrWhiteSpace(token))
+            throw new InvalidOperationException("Missing Line:ChannelAccessToken");
+        _accessToken = token;
         _logger = logger;
     }
 
