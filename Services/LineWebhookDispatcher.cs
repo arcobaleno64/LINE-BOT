@@ -9,6 +9,7 @@ public class LineWebhookDispatcher : ILineWebhookDispatcher
     private readonly IFileMessageHandler _fileMessageHandler;
     private readonly LineReplyService _reply;
     private readonly LoadingIndicatorService _loading;
+    private readonly IConfiguration _config;
     private readonly IWebhookMetrics _metrics;
     private readonly ILogger<LineWebhookDispatcher> _logger;
 
@@ -18,6 +19,7 @@ public class LineWebhookDispatcher : ILineWebhookDispatcher
         IFileMessageHandler fileMessageHandler,
         LineReplyService reply,
         LoadingIndicatorService loading,
+        IConfiguration config,
         IWebhookMetrics metrics,
         ILogger<LineWebhookDispatcher> logger)
     {
@@ -26,6 +28,7 @@ public class LineWebhookDispatcher : ILineWebhookDispatcher
         _fileMessageHandler = fileMessageHandler;
         _reply = reply;
         _loading = loading;
+        _config = config;
         _metrics = metrics;
         _logger = logger;
     }
@@ -56,8 +59,9 @@ public class LineWebhookDispatcher : ILineWebhookDispatcher
             return;
         }
 
-        // 顯示讀取動畫（僅對已知需處理的訊息類型，fire-and-forget）
-        if (evt.Message.Type is "text" or "image" or "file")
+        // 顯示讀取動畫（僅對通過 gating 之訊息，fire-and-forget），避免群組未被 mention
+        // 或停用群組檔案處理時仍對 LINE 發送無效之 loading 呼叫。
+        if (ShouldShowLoading(evt))
             _ = _loading.ShowAsync(evt, ct);
 
         if (await _textMessageHandler.HandleAsync(evt, publicBaseUrl, ct))
@@ -119,6 +123,25 @@ public class LineWebhookDispatcher : ILineWebhookDispatcher
             evt.WebhookEventId,
             evt.Message.Type,
             evt.Source?.Type ?? "unknown");
+    }
+
+    private bool ShouldShowLoading(LineEvent evt)
+    {
+        if (evt.Message is null)
+            return false;
+
+        var sourceIsGroupOrRoom = evt.Source?.Type is "group" or "room";
+
+        return evt.Message.Type switch
+        {
+            "text" => MentionGateService.ShouldHandle(evt),
+            // 圖片在 group/room 一律被靜默略過。
+            "image" => !sourceIsGroupOrRoom,
+            // 檔案在 group/room 需 App:AllowGroupFileHandling=true 才會處理。
+            "file" => !sourceIsGroupOrRoom
+                || MessageHandlerHelpers.GetBoolConfig(_config, "App:AllowGroupFileHandling", defaultValue: true),
+            _ => false,
+        };
     }
 
     private async Task HandlePostbackAsync(LineEvent evt, CancellationToken ct)
