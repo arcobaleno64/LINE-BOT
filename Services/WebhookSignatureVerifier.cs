@@ -9,6 +9,10 @@ public class WebhookSignatureVerifier : IWebhookSignatureVerifier
 
     public WebhookSignatureVerifier(string channelSecret)
     {
+        if (string.IsNullOrWhiteSpace(channelSecret))
+            throw new ArgumentException(
+                "Line:ChannelSecret must be a non-empty value; webhook signature verification cannot proceed with a blank secret.",
+                nameof(channelSecret));
         _channelSecret = channelSecret;
     }
 
