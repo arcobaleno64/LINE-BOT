@@ -266,6 +266,10 @@ internal sealed class FakeWebhookMetrics : IWebhookMetrics
     public int QueueDequeued { get; private set; }
     public int RepliesSent { get; private set; }
     public int RepliesFailed { get; private set; }
+    public int PushAccepted { get; private set; }
+    public int PushFailed { get; private set; }
+    public int PushQuotaBlocked { get; private set; }
+    public int PushRateLimited { get; private set; }
     public Dictionary<string, int> MessageHandledByType { get; } = new(StringComparer.OrdinalIgnoreCase);
 
     public void RecordWebhookRequest() => WebhookRequests++;
@@ -286,6 +290,10 @@ internal sealed class FakeWebhookMetrics : IWebhookMetrics
     public void RecordQueueDequeued() => QueueDequeued++;
     public void RecordReplySent(int messageCount) => RepliesSent++;
     public void RecordReplyFailed(int? statusCode = null) => RepliesFailed++;
+    public void RecordPushAccepted() => PushAccepted++;
+    public void RecordPushFailed(int? statusCode = null) => PushFailed++;
+    public void RecordPushQuotaBlocked() => PushQuotaBlocked++;
+    public void RecordPushRateLimited() => PushRateLimited++;
 }
 internal sealed record CapturedLogEntry(
     LogLevel Level,
@@ -516,8 +524,14 @@ internal static class TestFactory
             loading,
             config,
             new NoopAdvisoryPostbackHandler(),
+            new NoopJoinLeaveHandler(),
             actualMetrics,
             logger ?? NullLogger<LineWebhookDispatcher>.Instance);
+    }
+
+    internal sealed class NoopJoinLeaveHandler : IJoinLeaveHandler
+    {
+        public Task<bool> HandleAsync(LineEvent evt, CancellationToken ct) => Task.FromResult(false);
     }
 
     internal sealed class NoopAdvisoryPostbackHandler : IAdvisoryPostbackHandler

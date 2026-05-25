@@ -93,6 +93,23 @@ builder.Services.AddSingleton<IDateTimeIntentResponder, DateTimeIntentResponder>
 builder.Services.AddSingleton<ITextMessageHandler, TextMessageHandler>();
 builder.Services.AddSingleton<IImageMessageHandler, ImageMessageHandler>();
 builder.Services.AddSingleton<IFileMessageHandler, FileMessageHandler>();
+
+// ---------- DI: Group Push Pipeline ----------
+var dataDir = builder.Configuration["App:DataDirectory"]
+    ?? Path.Combine(builder.Environment.ContentRootPath, "data");
+builder.Services.AddSingleton<GroupRegistrationStore>(sp =>
+    new GroupRegistrationStore(
+        Path.Combine(dataDir, "groups.db"),
+        sp.GetRequiredService<ILogger<GroupRegistrationStore>>()));
+builder.Services.AddSingleton<LinePushService>(sp =>
+    new LinePushService(
+        sp.GetRequiredService<IHttpClientFactory>().CreateClient(),
+        sp.GetRequiredService<IConfiguration>(),
+        sp.GetRequiredService<GroupRegistrationStore>(),
+        sp.GetRequiredService<IWebhookMetrics>(),
+        sp.GetRequiredService<ILogger<LinePushService>>()));
+builder.Services.AddSingleton<IJoinLeaveHandler, JoinLeaveHandler>();
+
 builder.Services.AddSingleton<ILineWebhookDispatcher, LineWebhookDispatcher>();
 builder.Services.AddHostedService<WebhookBackgroundService>();
 builder.Services.AddHostedService<ConversationSummaryWorker>();
@@ -146,6 +163,19 @@ builder.Services.AddRateLimiter(options =>
         return RateLimitPartition.GetFixedWindowLimiter(ip, _ => new FixedWindowRateLimiterOptions
         {
             PermitLimit = 60,
+            Window = TimeSpan.FromMinutes(1),
+            QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+            QueueLimit = 0
+        });
+    });
+
+    // Push API: 10 requests/min per IP
+    options.AddPolicy("push-api", httpContext =>
+    {
+        var ip = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        return RateLimitPartition.GetFixedWindowLimiter(ip, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 10,
             Window = TimeSpan.FromMinutes(1),
             QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
             QueueLimit = 0
