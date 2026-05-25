@@ -21,6 +21,10 @@ public sealed class WebhookMetrics : IWebhookMetrics
     private readonly Counter<long> _queueDequeuedTotal;
     private readonly Counter<long> _replySentTotal;
     private readonly Counter<long> _replyFailedTotal;
+    private readonly Counter<long> _pushAcceptedTotal;
+    private readonly Counter<long> _pushFailedTotal;
+    private readonly Counter<long> _pushQuotaBlockedTotal;
+    private readonly Counter<long> _pushRateLimitedTotal;
 
     public WebhookMetrics()
     {
@@ -39,6 +43,10 @@ public sealed class WebhookMetrics : IWebhookMetrics
         _queueDequeuedTotal = _meter.CreateCounter<long>("linebot.webhook.queue_dequeued.total");
         _replySentTotal = _meter.CreateCounter<long>("linebot.webhook.reply_sent.total");
         _replyFailedTotal = _meter.CreateCounter<long>("linebot.webhook.reply_failed.total");
+        _pushAcceptedTotal = _meter.CreateCounter<long>("linebot.push.accepted.total");
+        _pushFailedTotal = _meter.CreateCounter<long>("linebot.push.failed.total");
+        _pushQuotaBlockedTotal = _meter.CreateCounter<long>("linebot.push.quota_blocked.total");
+        _pushRateLimitedTotal = _meter.CreateCounter<long>("linebot.push.rate_limited.total");
     }
 
     public void RecordWebhookRequest() => SafeRecord(() => _webhookRequestsTotal.Add(1));
@@ -168,6 +176,24 @@ public sealed class WebhookMetrics : IWebhookMetrics
             _replyFailedTotal.Add(1, tags);
         });
     }
+
+    public void RecordPushAccepted() => SafeRecord(() => _pushAcceptedTotal.Add(1));
+
+    public void RecordPushFailed(int? statusCode = null)
+    {
+        SafeRecord(() =>
+        {
+            var tags = new TagList
+            {
+                { "status.code", statusCode?.ToString() ?? "unknown" }
+            };
+            _pushFailedTotal.Add(1, tags);
+        });
+    }
+
+    public void RecordPushQuotaBlocked() => SafeRecord(() => _pushQuotaBlockedTotal.Add(1));
+
+    public void RecordPushRateLimited() => SafeRecord(() => _pushRateLimitedTotal.Add(1));
 
     private static void SafeRecord(Action action)
     {

@@ -11,6 +11,7 @@ public class LineWebhookDispatcher : ILineWebhookDispatcher
     private readonly LoadingIndicatorService _loading;
     private readonly IConfiguration _config;
     private readonly IAdvisoryPostbackHandler _advisoryPostback;
+    private readonly IJoinLeaveHandler _joinLeave;
     private readonly IWebhookMetrics _metrics;
     private readonly ILogger<LineWebhookDispatcher> _logger;
 
@@ -22,6 +23,7 @@ public class LineWebhookDispatcher : ILineWebhookDispatcher
         LoadingIndicatorService loading,
         IConfiguration config,
         IAdvisoryPostbackHandler advisoryPostback,
+        IJoinLeaveHandler joinLeave,
         IWebhookMetrics metrics,
         ILogger<LineWebhookDispatcher> logger)
     {
@@ -32,6 +34,7 @@ public class LineWebhookDispatcher : ILineWebhookDispatcher
         _loading = loading;
         _config = config;
         _advisoryPostback = advisoryPostback;
+        _joinLeave = joinLeave;
         _metrics = metrics;
         _logger = logger;
     }
@@ -43,6 +46,13 @@ public class LineWebhookDispatcher : ILineWebhookDispatcher
 
     private async Task DispatchCoreAsync(LineEvent evt, string publicBaseUrl, CancellationToken ct)
     {
+        if (evt.Type is "join" or "leave")
+        {
+            await _joinLeave.HandleAsync(evt, ct);
+            _metrics.RecordMessageHandled(evt.Type, evt.Source?.Type);
+            return;
+        }
+
         if (evt.Type == "postback")
         {
             await HandlePostbackAsync(evt, ct);

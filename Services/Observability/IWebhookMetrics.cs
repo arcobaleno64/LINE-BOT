@@ -17,4 +17,8 @@ public interface IWebhookMetrics
     void RecordQueueDequeued();
     void RecordReplySent(int messageCount);
     void RecordReplyFailed(int? statusCode = null);
+    void RecordPushAccepted();
+    void RecordPushFailed(int? statusCode = null);
+    void RecordPushQuotaBlocked();
+    void RecordPushRateLimited();
 }
