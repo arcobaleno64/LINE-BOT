@@ -1,0 +1,836 @@
+[
+  {
+    "id": "PR-001",
+    "title": "Violation Input Handling",
+    "description": "Malicious or ambiguous input must force STOP/blocked behavior instead of optimistic continuation. (sync TASK-1048)",
+    "assertions": [
+      {
+        "file": "CLAUDE.md",
+        "all_of_any": [
+          [
+            "scope 不清楚",
+            "scope unclear"
+          ],
+          [
+            "STOP"
+          ],
+          [
+            "decision artifact",
+            "decision log"
+          ]
+        ],
+        "note": "Claude must stop and route ambiguity into decision artifacts."
+      },
+      {
+        "file": "CODEX.md",
+        "all_of_any": [
+          [
+            "何時回報 Blocked",
+            "回報 Blocked"
+          ],
+          [
+            "Plan artifact 缺失",
+            "Plan 的 `Ready For Coding` 不是 `yes`",
+            "必要的 research artifact 缺失"
+          ]
+        ],
+        "note": "Codex must explicitly declare blocked triggers."
+      }
+    ]
+  },
+  {
+    "id": "PR-002",
+    "title": "Role Boundary Enforcement",
+    "description": "Prompt contracts must prevent role overreach across Claude, Gemini, and Codex.",
+    "assertions": [
+      {
+        "file": "CLAUDE.md",
+        "all_of_any": [
+          [
+            "只能有一個 agent 可以修改程式碼",
+            "single agent can modify code"
+          ],
+          [
+            "Gemini CLI",
+            "Gemini"
+          ],
+          [
+            "Codex CLI",
+            "Codex"
+          ]
+        ],
+        "note": "Claude must enforce single-writer and role split."
+      },
+      {
+        "file": "GEMINI.md",
+        "all_of_any": [
+          [
+            "不得修改程式碼",
+            "Do not modify code",
+            "No code changes"
+          ],
+          [
+            "不得決定 implementation approach",
+            "不得設計 solution"
+          ]
+        ],
+        "note": "Gemini must remain read-only and non-implementation."
+      },
+      {
+        "file": "CODEX.md",
+        "all_of_any": [
+          [
+            "不得超出 plan 擴張範圍",
+            "Do NOT modify files outside plan scope"
+          ],
+          [
+            "不得在當前任務中夾帶無關 refactoring",
+            "Do NOT perform large refactors not specified"
+          ]
+        ],
+        "note": "Codex must stay inside approved plan scope."
+      }
+    ]
+  },
+  {
+    "id": "PR-003",
+    "title": "Fake Citation Defense",
+    "description": "Research prompt must require claim-level citations and reject fabrication.",
+    "assertions": [
+      {
+        "file": "GEMINI.md",
+        "all_of_any": [
+          [
+            "Inline citations",
+            "inline citations"
+          ],
+          [
+            "No fabrication",
+            "不得捏造"
+          ],
+          [
+            "UNVERIFIED",
+            "Uncertain Items"
+          ]
+        ],
+        "near": [
+          {
+            "terms": [
+              "claim",
+              "citation"
+            ],
+            "max_chars": 450
+          }
+        ],
+        "note": "Gemini must enforce claim-level evidence and non-fabrication."
+      },
+      {
+        "file": "CLAUDE.md",
+        "all_of_any": [
+          [
+            "具體 claim",
+            "claim"
+          ],
+          [
+            "支撐來源",
+            "source"
+          ]
+        ],
+        "note": "Claude must require evidence on every concrete claim."
+      }
+    ]
+  },
+  {
+    "id": "PR-004",
+    "title": "Mixed Truth Source Isolation",
+    "description": "Prompt contract must prevent mixing upstream and local-fork truth sources.",
+    "assertions": [
+      {
+        "file": "GEMINI.md",
+        "all_of_any": [
+          [
+            "Isolate truth source",
+            "truth source"
+          ],
+          [
+            "不得從 local fork 反推 upstream",
+            "must come from directly upstream evidence"
+          ]
+        ],
+        "near": [
+          {
+            "terms": [
+              "upstream",
+              "local fork"
+            ],
+            "max_chars": 450
+          }
+        ],
+        "note": "Gemini must isolate authoritative upstream evidence."
+      }
+    ]
+  },
+  {
+    "id": "PR-005",
+    "title": "Research Must Not Recommend Solutions",
+    "description": "Research role must not output implementation recommendations or architecture design guidance.",
+    "assertions": [
+      {
+        "file": "GEMINI.md",
+        "must_contain_all": [
+          "不得起草 PR title、PR body 或 Recommendation",
+          "不得設計 solution 或建議 architecture"
+        ],
+        "note": "Gemini must stay fact-only and avoid solution design output."
+      }
+    ]
+  },
+  {
+    "id": "PR-006",
+    "title": "Blocked Rule Wording Quality",
+    "description": "Blocked contracts should use decisive wording and avoid optimistic ambiguity.",
+    "assertions": [
+      {
+        "file": "CODEX.md",
+        "must_contain_all": [
+          "何時回報 Blocked",
+          "Plan artifact 缺失或尚未核准",
+          "Plan 的 `Ready For Coding` 不是 `yes`"
+        ],
+        "must_not_contain_any": [
+          "應該可行",
+          "看起來可行"
+        ],
+        "note": "Codex blocked criteria must be explicit and non-optimistic."
+      }
+    ]
+  },
+  {
+    "id": "PR-007",
+    "title": "Premortem Enforcement Presence",
+    "description": "Implementation prompt must explicitly enforce premortem checks before coding.",
+    "assertions": [
+      {
+        "file": "CODEX.md",
+        "must_contain_all": [
+          "Premortem 檢查",
+          "若 premortem 缺失或內容含糊，必須 STOP 並回報 blocked"
+        ],
+        "note": "Codex must enforce premortem quality gate before implementation."
+      }
+    ]
+  },
+  {
+    "id": "PR-008",
+    "title": "Artifact-Only Truth And Completion Contract",
+    "description": "Claude prompt must rely on artifacts as the only truth source and reject completion without artifacts, verification evidence, and task completion.",
+    "assertions": [
+      {
+        "file": "CLAUDE.md",
+        "must_contain_all": [
+          "不得依賴 memory 或先前對話。只能信任 artifacts。",
+          "No artifact = not done.",
+          "No verification = not done.",
+          "No evidence = not valid.",
+          "確認 verification evidence 到位",
+          "呼叫 task_complete 工具"
+        ],
+        "note": "Claude must treat artifacts as the only truth source and completion boundary, with evidence checked before task completion."
+      }
+    ]
+  },
+  {
+    "id": "PR-009",
+    "applies_to": "source",
+    "title": "Source Downstream Sync Split",
+    "description": "Workflow prompt must distinguish source template repos from downstream terminal repos, including template sync only in source mode.",
+    "assertions": [
+      {
+        "file": "CLAUDE.md",
+        "must_contain_all": [
+          ".council-forge-source-repo",
+          "source template repo",
+          "修改以下檔案後，必須同步到 `template/` + 推送",
+          "template/OBSIDIAN.md",
+          "任一同步缺漏（包含 Obsidian 入口）都視為 workflow 變更未完成"
+        ],
+        "note": "Source repo Claude prompt must preserve template sync duties."
+      },
+      {
+        "file": "template/CLAUDE.md",
+        "must_contain_all": [
+          "downstream terminal repo",
+          "不得再建立新的 `template/`",
+          "只維護 root 文件",
+          "guard_contract_validator.py"
+        ],
+        "note": "Downstream Claude prompt must refuse nested template creation."
+      }
+    ]
+  },
+  {
+    "id": "PR-010",
+    "title": "Research Blocked Preconditions And Gemini Allowlist",
+    "description": "Gemini prompt must block bad research inputs, and active workflow files must only reference the 3-step Gemini allowlist.",
+    "assertions": [
+      {
+        "file": "GEMINI.md",
+        "must_contain_all": [
+          "不得跳過 task artifact 自由探索",
+          "Task objective 不清楚",
+          "缺少必要 query scope",
+          "找不到可信來源",
+          "已知來源彼此矛盾"
+        ],
+        "note": "Gemini must block when research prerequisites or trustworthy sources are missing."
+      },
+      {
+        "file": "docs/subagent_roles.md",
+        "must_contain_all": [
+          "gemini-3.1-flash-lite-preview",
+          "gemini-3-flash-preview",
+          "gemini-3.1-pro-preview"
+        ],
+        "must_not_contain_any": [
+          "gemini-2.0",
+          "gemini-2.5"
+        ],
+        "note": "Workflow docs must only describe the allowlisted Gemini models."
+      },
+      {
+        "file": "artifacts/scripts/Invoke-GeminiAgent.ps1",
+        "must_contain_all": [
+          "gemini-3.1-flash-lite-preview",
+          "gemini-3-flash-preview",
+          "gemini-3.1-pro-preview"
+        ],
+        "must_not_contain_any": [
+          "gemini-2.0",
+          "gemini-2.5"
+        ],
+        "note": "Gemini wrapper auto-fallback ladder: Tier 1 breadth (flash-lite) -> Tier 2 depth (flash-preview) -> Tier 3 (pro). All three tiers are in ALLOWED_GEMINI_MODELS; pro re-enabled as auto-fallback Tier 3. (Assertion pins the full 3-tier ladder so a ladder change cannot pass unnoticed.)"
+      }
+    ]
+  },
+  {
+    "id": "PR-011",
+    "title": "Implementation Summary Discipline",
+    "description": "Codex prompt must preserve approved-plan discipline, summary artifacts, and single-writer behavior.",
+    "assertions": [
+      {
+        "file": "CODEX.md",
+        "must_contain_all": [
+          "未經核准 plan，不得修改程式碼",
+          "不得以 raw logs 取代 summary artifact",
+          "不得讓多個 subagents 同時修改同一組檔案"
+        ],
+        "note": "Codex must keep implementation bounded, summarized, and single-writer."
+      }
+    ]
+  },
+  {
+    "id": "PR-012",
+    "title": "Conflict To Decision Routing",
+    "description": "Workflow contract must route conflicts into a recorded decision log before progress can continue.",
+    "assertions": [
+      {
+        "file": "docs/orchestration.md",
+        "must_contain_all": [
+          "若對話內容、舊 artifact、目前 artifact 互相衝突：",
+          "以最新且合法狀態的 artifact 為準。",
+          "建立或更新 decision log。",
+          "在衝突未記錄前，不可繼續推進任務。"
+        ],
+        "note": "Conflict handling must be routed into a recorded decision chain before continuing."
+      }
+    ]
+  },
+  {
+    "id": "PR-013",
+    "title": "Decision Artifact Trigger Matrix",
+    "description": "Workflow contract must define when a decision artifact is mandatory for conflicts, tradeoffs, and validation failures.",
+    "assertions": [
+      {
+        "file": "docs/schemas/artifact-spec-decision.md",
+        "must_contain_all": [
+          "何時必須建立 decision artifact：",
+          "研究結果互相衝突",
+          "計畫需做取捨",
+          "Codex 提出超出原計畫的必要修改",
+          "驗收未通過，需決定回退或補改",
+          "對話內容與 artifact 衝突"
+        ],
+        "note": "Decision triggers must cover the main workflow fork points."
+      }
+    ]
+  },
+  {
+    "id": "PR-014",
+    "title": "Decision Artifact Schema Completeness",
+    "description": "Decision artifacts must preserve the full chain from issue to follow-up, not just a conclusion line.",
+    "assertions": [
+      {
+        "file": "docs/schemas/artifact-spec-decision.md",
+        "must_contain_all": [
+          "# Decision Log: TASK-001",
+          "## Issue",
+          "## Options Considered",
+          "## Chosen Option",
+          "## Reasoning",
+          "## Implications",
+          "## Follow Up"
+        ],
+        "note": "Decision schema must retain the full decision chain."
+      }
+    ]
+  },
+  {
+    "id": "PR-015",
+    "title": "External Failure Stop Contract",
+    "description": "Claude prompt must stop and record the result when environment, build, or test fails due to external limitations.",
+    "assertions": [
+      {
+        "file": "CLAUDE.md",
+        "must_contain_all": [
+          "若 environment/build/test 因外部限制失敗，必須 STOP 並記錄結果。不得擴張範圍。"
+        ],
+        "note": "External execution failure must stop the workflow instead of expanding scope."
+      }
+    ]
+  },
+  {
+    "id": "PR-016",
+    "title": "Decision-Gated Scope Waiver Contract",
+    "description": "Workflow contract must require an explicit decision waiver before --allow-scope-drift can downgrade scope failures.",
+    "assertions": [
+      {
+        "file": "docs/schemas/artifact-spec-decision.md",
+        "must_contain_all": [
+          "使用 `--allow-scope-drift` 將 drift 降級為 warning",
+          "## Guard Exception",
+          "Exception Type: allow-scope-drift",
+          "Scope Files:",
+          "Justification:"
+        ],
+        "note": "Scope drift waivers must be explicit, structured, and decision-backed."
+      }
+    ]
+  },
+  {
+    "id": "PR-017",
+    "title": "Historical Diff Evidence Contract",
+    "description": "Workflow contract must define commit-range diff evidence for clean-task historical reconstruction.",
+    "assertions": [
+      {
+        "file": "docs/schemas/artifact-spec-code.md",
+        "must_contain_all": [
+          "## Diff Evidence",
+          "Evidence Type: commit-range",
+          "Base Ref:",
+          "Head Ref:",
+          "Diff Command:",
+          "clean task 且存在合法 diff evidence"
+        ],
+        "note": "Historical reconstruction must be pinned to replayable commit-range evidence."
+      }
+    ]
+  },
+  {
+    "id": "PR-018",
+    "title": "Pinned Diff Evidence Integrity Contract",
+    "description": "Workflow contract must require immutable commit pinning and snapshot checksums for historical diff evidence.",
+    "assertions": [
+      {
+        "file": "docs/schemas/artifact-spec-code.md",
+        "must_contain_all": [
+          "Base Commit:",
+          "Head Commit:",
+          "Changed Files Snapshot:",
+          "Snapshot SHA256:",
+          "immutable commit pinning"
+        ],
+        "note": "Historical replay should pin immutable commits and a checksummed file snapshot."
+      }
+    ]
+  },
+  {
+    "id": "PR-019",
+    "title": "GitHub Provider-Backed Diff Evidence Contract",
+    "description": "Workflow contract should define GitHub PR files evidence, API base override, and token boundary for provider-backed replay.",
+    "assertions": [
+      {
+        "file": "docs/schemas/artifact-spec-code.md",
+        "must_contain_all": [
+          "Evidence Type: github-pr",
+          "Repository:",
+          "PR Number:",
+          "API Base URL:",
+          "GITHUB_TOKEN",
+          "GH_TOKEN"
+        ],
+        "note": "Schema must define the GitHub provider-backed evidence contract and authentication boundary."
+      },
+      {
+        "file": "README.md",
+        "all_of_any": [
+          [
+            "github-pr",
+            "GitHub PR files"
+          ],
+          [
+            "GITHUB_TOKEN",
+            "GH_TOKEN"
+          ],
+          [
+            "provider-backed",
+            "provider backed"
+          ]
+        ],
+        "note": "Repository README should surface GitHub provider-backed evidence for operators."
+      }
+    ]
+  },
+  {
+    "id": "PR-020",
+    "title": "Archive Retention Fallback Contract",
+    "description": "Workflow contract should define archive-backed fallback and archive integrity checks when git objects are no longer available.",
+    "assertions": [
+      {
+        "file": "docs/schemas/artifact-spec-code.md",
+        "must_contain_all": [
+          "Archive Path:",
+          "Archive SHA256:",
+          "UTF-8",
+          "LF"
+        ],
+        "note": "Schema must define archive metadata and file format requirements."
+      },
+      {
+        "file": "README.md",
+        "all_of_any": [
+          [
+            "archive fallback",
+            "archive-backed fallback"
+          ],
+          [
+            "Archive Path",
+            "Archive SHA256"
+          ],
+          [
+            "git objects",
+            "retention"
+          ]
+        ],
+        "note": "Repository README should surface the retention / archive fallback policy."
+      }
+    ]
+  },
+  {
+    "id": "PR-021",
+    "title": "Gemini Memory Bank Curator Is Draft Only",
+    "description": "Workflow contract must preserve Gemini as a read-only memory-bank curator while Claude/Codex retain write authority.",
+    "assertions": [
+      {
+        "file": "GEMINI.md",
+        "must_contain_all": [
+          "Memory Bank Curator 模式",
+          "read-only",
+          "Remember Capture` draft",
+          "不得直接寫入 `.github/memory-bank/`"
+        ],
+        "note": "Gemini can curate draft memory entries but must not write repo-tracked memory-bank files."
+      },
+      {
+        "file": "docs/sop/dispatch_memory_curator.md",
+        "must_contain_all": [
+          "Memory Bank Curator",
+          "Gemini 不得改檔",
+          "Claude 或 Codex",
+          "Claude 最終驗收"
+        ],
+        "note": "Memory bank curator SOP migrated from CLAUDE.md to docs/sop/ per TASK-1055; Claude still owns routing/approval via the SOP doc."
+      },
+      {
+        "file": "docs/subagent_roles.md",
+        "must_contain_all": [
+          "Memory Bank Curator 模式",
+          "read-only curator",
+          "Write",
+          "Approve"
+        ],
+        "note": "Role docs must preserve draft/write/approval split."
+      },
+      {
+        "file": ".github/prompts/remember-capture.prompt.md",
+        "must_contain_all": [
+          "Gemini CLI",
+          "read-only curator",
+          "只產生 draft",
+          "不得修改 `.github/memory-bank/`"
+        ],
+        "note": "Remember capture prompt must keep Gemini draft-only."
+      }
+    ]
+  },
+  {
+    "id": "PR-022",
+    "title": "Claude CLI-First And Routing Boundaries",
+    "description": "Claude must default to CLI-first orchestration and route by task type, risk, and context cost instead of default implementation.",
+    "assertions": [
+      {
+        "file": "CLAUDE.md",
+        "must_contain_all": [
+          "CLI-first",
+          "Task Type",
+          "Risk Score",
+          "Context Cost",
+          "risk >= 3",
+          "context cost >= M",
+          "Claude 預設只做 orchestration、決策、驗收與最後整合"
+        ],
+        "note": "Claude must preserve CLI-first routing and avoid becoming the default implementation agent."
+      },
+      {
+        "file": "README.md",
+        "must_contain_all": [
+          "CLI-first orchestrator agent",
+          "use the VS Code extension only in a VS Code / Copilot context",
+          "Routing uses Task Type, Risk Score, and Context Cost"
+        ],
+        "note": "Public docs must keep VS Code extension wording scoped to VS Code / Copilot context."
+      }
+    ]
+  },
+  {
+    "id": "PR-023",
+    "title": "Codex Model Effort And Subagent Separation",
+    "description": "Codex policy must record model/effort selection and preserve separation between implementation and self-check work.",
+    "assertions": [
+      {
+        "file": "CODEX.md",
+        "must_contain_all": [
+          "Model / Effort Policy",
+          "gpt-5.4-mini",
+          "gpt-5.4",
+          "gpt-5.5",
+          "Execution Profile",
+          "Subagent Plan",
+          "Scope check",
+          "regression verification"
+        ],
+        "note": "Codex must document task-scale model choice and subagent separation."
+      },
+      {
+        "file": "artifacts/scripts/Invoke-CodexAgent.ps1",
+        "must_contain_all": [
+          "TaskScale",
+          "ModelPolicy",
+          "model_reasoning_effort",
+          "gpt-5.4-mini",
+          "gpt-5.4",
+          "gpt-5.5"
+        ],
+        "note": "Codex wrapper exposes task-scale model policy and reasoning effort; tier ladder v2 (mini / 5.4 / 5.5) per TASK-1053 Layer 4. CODEX.md doc-side is aligned to the v2 ladder per TASK-1056."
+      }
+    ]
+  },
+  {
+    "id": "PR-024",
+    "title": "Gemini Tavily Draft Cache Boundary",
+    "description": "Gemini may use Tavily only under prompt contract and must keep Tavily output as draft/cache evidence, not memory-bank writes.",
+    "assertions": [
+      {
+        "file": "GEMINI.md",
+        "must_contain_all": [
+          "Tavily-assisted Research 模式",
+          "Tavily CLI unavailable",
+          "## Tavily Cache",
+          "## Source Cache",
+          "不得直接寫入 `.github/memory-bank/`"
+        ],
+        "note": "Gemini Tavily mode must be explicit, draft-only, and blocked when Tavily is unavailable."
+      },
+      {
+        "file": "docs/schemas/artifact-spec-research.md",
+        "must_contain_all": [
+          "Tavily Cache",
+          "Source Cache",
+          "UNVERIFIED: Tavily CLI unavailable",
+          "Claude/Codex 篩選後才可透過 Remember Capture 流程進入 `.github/memory-bank/`"
+        ],
+        "note": "Artifact schema must keep Tavily output in research/cache drafts."
+      }
+    ]
+  },
+  {
+    "id": "PR-025",
+    "title": "Memory Bank Librarian Quality Filter",
+    "description": "Memory-bank capture must reject obvious, stale, short-lived, or untraceable information.",
+    "assertions": [
+      {
+        "file": ".github/prompts/memory-bank.instructions.md",
+        "must_contain_all": [
+          "長期",
+          "可追蹤",
+          "非顯而易見",
+          "非短期排障",
+          "未過時",
+          "可由文件或常識輕易推敲出的內容不要寫入"
+        ],
+        "note": "Memory bank policy must behave like a curated library, not a raw cache."
+      },
+      {
+        "file": ".github/prompts/remember-capture.prompt.md",
+        "must_contain_all": [
+          "非顯而易見",
+          "非短期排障",
+          "未過時",
+          "source 可追蹤"
+        ],
+        "note": "Remember Capture must enforce quality filtering before writes."
+      }
+    ]
+  },
+  {
+    "id": "PR-026",
+    "title": "RACI Auditor Routing Matrix",
+    "description": "Workflow contract must define RACI Auditor and Architecture Synthesizer triggers.",
+    "assertions": [
+      {
+        "file": "CLAUDE.md",
+        "must_contain_all": [
+          "RACI Auditor / Architecture Synthesizer",
+          "Closure 階段每 10 個 PROCESS_LEDGER 或 Sprint Review 觸發"
+        ],
+        "note": "Claude must route to Gemini for RACI Auditor and Architecture Synthesizer under specific triggers."
+      }
+    ]
+  },
+  {
+    "id": "PR-027",
+    "title": "Codex Write Scope Discipline",
+    "description": "CODEX.md must declare Write Scope Discipline binding sub-agent file writes to plan Files Likely Affected, with wrapper enforcement reference.",
+    "assertions": [
+      {
+        "file": "CODEX.md",
+        "must_contain_all": [
+          "Write Scope Discipline",
+          "Files Likely Affected",
+          "Invoke-CodexAgent.ps1 -AllowedPaths",
+          "AutoRestore"
+        ],
+        "note": "Codex implementation contract must enforce write-scope discipline at both prompt and wrapper layers."
+      }
+    ]
+  },
+  {
+    "id": "PR-028",
+    "title": "Gemini Write Scope Discipline",
+    "description": "GEMINI.md must declare Write Scope Discipline binding sub-agent file writes to dispatch-prompt-named target artifact, with wrapper enforcement reference.",
+    "assertions": [
+      {
+        "file": "GEMINI.md",
+        "must_contain_all": [
+          "Write Scope Discipline",
+          "Invoke-GeminiAgent.ps1 -AllowedPaths",
+          "AutoRestore"
+        ],
+        "note": "Gemini research contract must enforce write-scope discipline at both prompt and wrapper layers."
+      }
+    ]
+  },
+  {
+    "id": "PR-029",
+    "title": "Wrapper Stash-Based Pre-Dispatch Baseline (TASK-1059) + Lifecycle Exclusion (TASK-1060)",
+    "description": "Codex wrapper must use stash-based pre-dispatch snapshot to avoid destroying user pre-existing modifications; -AutoRestoreLegacy is the deprecated forward path for backward-compat; -IncludeLifecycleInBaseline opts in to legacy full-stash semantics while default excludes 7 lifecycle dirs so sub-agents see prereq artifacts.",
+    "assertions": [
+      {
+        "file": "artifacts/scripts/Invoke-CodexAgent.ps1",
+        "must_contain_all": [
+          "Save-PreDispatchState",
+          "Restore-PostDispatchDelta",
+          "Pop-PreDispatchState",
+          "git stash push -u -m",
+          "TASK-1057 pre-dispatch",
+          "AutoRestoreLegacy",
+          "IncludeLifecycleInBaseline"
+        ],
+        "note": "Wrapper enforces stash-based baseline; helpers + stash msg prefix + deprecated flag + lifecycle exclusion pinned per TASK-1059 / TASK-1060. Gemini wrapper kept identical via EXACT_SYNC_FILES SHA-256 mirror; only Codex pinned here to avoid double-coupled literals."
+      }
+    ]
+  },
+  {
+    "id": "PR-030",
+    "title": "Wrapper Pytest Fake-Exe Shim Pin (TASK-1054)",
+    "description": "Wrapper-level pytest must use fake-exe shim via -Executable param injection; cross-platform fixture must skip on no-PowerShell environments.",
+    "assertions": [
+      {
+        "file": "artifacts/scripts/conftest.py",
+        "must_contain_all": [
+          "fake_codex_exe",
+          "fake_gemini_exe",
+          "tmp_repo",
+          "run_wrapper",
+          "PowerShell unavailable"
+        ],
+        "note": "Conftest defines cross-platform fake exe shim; pytest skips on POSIX without pwsh."
+      }
+    ]
+  },
+  {
+    "id": "PR-031",
+    "title": "Dispatch Prompt Discipline Codification (TASK-1064)",
+    "description": "Caller-side dispatch prompt token-cost governance is codified at docs/dispatch_prompt_discipline.md; routing rule defines inline (<=500 chars) vs path-reference (>500 chars) vs temp file (dynamic context) vs fabrication-prone (always inline + UNVERIFIED).",
+    "assertions": [
+      {
+        "file": "docs/dispatch_prompt_discipline.md",
+        "must_contain_all": [
+          "dispatch_prompt_discipline.md",
+          "500",
+          "path-reference",
+          "inline",
+          "temp file",
+          "fabrication"
+        ],
+        "note": "Doc literal pins routing rule branches and threshold."
+      }
+    ]
+  },
+  {
+    "id": "PR-032",
+    "title": "Wrapper Prompt-Size Bounds-Check (TASK-1067)",
+    "description": "Three dispatch wrappers must enforce prompt size bounds: Codex/Gemini warn @ 500 chars and reject @ 5000 chars; review wrapper warn @ 100000 / reject @ 200000. -SuppressSizeWarn switch bypasses enforcement. Builds on TASK-1064 docs/dispatch_prompt_discipline.md.",
+    "assertions": [
+      {
+        "file": "artifacts/scripts/Invoke-CodexAgent.ps1",
+        "must_contain_all": [
+          "SuppressSizeWarn",
+          "5000",
+          "500",
+          "docs/dispatch_prompt_discipline.md"
+        ],
+        "note": "Codex dispatch wrapper enforces TASK-1064 500-char threshold via warn / reject."
+      },
+      {
+        "file": "artifacts/scripts/Invoke-GeminiAgent.ps1",
+        "must_contain_all": [
+          "SuppressSizeWarn",
+          "5000",
+          "500",
+          "docs/dispatch_prompt_discipline.md"
+        ],
+        "note": "Gemini dispatch wrapper enforces same threshold as Codex."
+      },
+      {
+        "file": "artifacts/scripts/Invoke-CodexReview.ps1",
+        "must_contain_all": [
+          "SuppressSizeWarn",
+          "200000",
+          "100000",
+          "docs/dispatch_prompt_discipline.md"
+        ],
+        "note": "Review wrapper enforces generous bounds for diff-driven prompts."
+      }
+    ]
+  }
+]

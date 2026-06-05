@@ -1,0 +1,58 @@
+name: Bug Report
+description: 回報缺陷（依 GitHub Issue Forms 慣例）
+title: "[Bug] "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感謝回報。請依下列欄位填寫；缺漏會延長修復時間。
+        若涉敏感資訊（log 含 token、credential、PII），請先脫敏再貼上。
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: 重現步驟（最小可重現路徑）
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected_actual
+    attributes:
+      label: Expected vs Actual
+      description: 預期行為 vs 實際行為
+      placeholder: |
+        Expected: ...
+        Actual: ...
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS、Python / runtime 版本、branch / commit hash
+      placeholder: |
+        - OS: Windows 11 / macOS 14 / Ubuntu 22.04
+        - Python: 3.12.x
+        - branch / commit: master @ abcdef1
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / Screenshots
+      description: 錯誤訊息、stack trace、截圖；脫敏後貼上
+    validations:
+      required: false
+  - type: textarea
+    id: linked_artifacts
+    attributes:
+      label: Linked Artifacts
+      description: 若已開 task / decision artifact，列出路徑
+      placeholder: artifacts/tasks/TASK-XXXX.task.md
+    validations:
+      required: false

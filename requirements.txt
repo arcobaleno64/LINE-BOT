@@ -1,0 +1,3 @@
+# Workflow Guard Scripts Dependencies
+# Most scripts are stdlib-only. PyYAML is required by discover_templates.py.
+PyYAML>=6.0.3,<7.0

@@ -1,0 +1,46 @@
+{
+  "hooks": {
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "_comment": "Windows (BurntToast): Install-Module BurntToast -Scope CurrentUser",
+            "shell": "powershell",
+            "command": "try { Import-Module BurntToast -ErrorAction Stop; New-BurntToastNotification -Text 'Claude Code','Notification / background task ready' } catch { [console]::Beep(800,200) }",
+            "async": true,
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "_comment_windows": "PowerShell: Import-Module BurntToast; New-BurntToastNotification -Text 'Claude Code','Turn complete'",
+            "_comment_macos": "osascript -e 'display notification \"Turn complete\" with title \"Claude Code\"'",
+            "_comment_linux": "notify-send 'Claude Code' 'Turn complete'",
+            "shell": "powershell",
+            "command": "try { Import-Module BurntToast -ErrorAction Stop; New-BurntToastNotification -Text 'Claude Code','Turn complete' } catch { [console]::Beep(800,200) }",
+            "async": true,
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "_comment": "Auto-format after file writes. Adjust the command for your formatter (prettier, black, gofmt, etc.)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_response.filePath // .tool_input.file_path' | { read -r f; prettier --write \"$f\"; } 2>/dev/null || true"
+          }
+        ]
+      }
+    ]
+  }
+}

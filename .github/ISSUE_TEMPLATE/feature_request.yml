@@ -1,0 +1,53 @@
+name: Feature Request
+description: 提議新功能或改善現有功能
+title: "[Feature] "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感謝提案。請依下列欄位填寫；提案被接受後將轉為 task artifact 進入 artifact-first workflow。
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Statement
+      description: 此提案解決什麼問題；為何重要
+    validations:
+      required: true
+  - type: textarea
+    id: proposed
+    attributes:
+      label: Proposed Solution
+      description: 建議之解決方案；可附草圖或 pseudo-code
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: 已考慮之其他選項與被否決理由（對應未來 decision artifact §Options Considered）
+    validations:
+      required: false
+  - type: textarea
+    id: acceptance_criteria
+    attributes:
+      label: Acceptance Criteria
+      description: 條列且可驗證之驗收條件（對應未來 task artifact §Acceptance Criteria）
+      placeholder: |
+        - AC-1: ...
+        - AC-2: ...
+    validations:
+      required: true
+  - type: dropdown
+    id: scale
+    attributes:
+      label: Estimated Scale
+      description: 估計規模（對應 lightweight_mode_rules.md §3.5 規模適用矩陣）
+      options:
+        - lightweight
+        - standard
+        - full
+        - unknown
+    validations:
+      required: false
