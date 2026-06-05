@@ -1,0 +1,68 @@
+[
+  {
+    "case_id": "structured-checklist-complete",
+    "fixture_name": "structured-checklist-complete.verify.md",
+    "strategy": "structured-checklist",
+    "confidence": "high",
+    "manual_review_required": false,
+    "expected_pass_fail_result": "pass",
+    "expected_checklist_result": "verified",
+    "expected_reason_code": "",
+    "expected_unresolved_fields": [],
+    "summary_fragment": "Imported from external legacy verify artifact via structured-checklist; confidence=high."
+  },
+  {
+    "case_id": "heading-block-partial",
+    "fixture_name": "heading-block-partial.verify.md",
+    "strategy": "heading-block-heuristic",
+    "confidence": "medium",
+    "manual_review_required": true,
+    "expected_pass_fail_result": "fail",
+    "expected_checklist_result": "deferred",
+    "expected_reason_code": "MANUAL_CHECK_DEFERRED",
+    "expected_unresolved_fields": [
+      "criterion",
+      "result",
+      "reviewer",
+      "timestamp"
+    ],
+    "summary_fragment": "Imported from external legacy verify artifact via heading-block-heuristic; confidence=medium."
+  },
+  {
+    "case_id": "checkbox-list-mixed",
+    "fixture_name": "checkbox-list-mixed.verify.md",
+    "strategy": "checkbox-heuristic",
+    "confidence": "low",
+    "manual_review_required": true,
+    "expected_pass_fail_result": "fail",
+    "expected_checklist_result": "deferred",
+    "expected_reason_code": "MANUAL_CHECK_DEFERRED",
+    "expected_unresolved_fields": [
+      "criterion",
+      "result",
+      "evidence",
+      "reviewer",
+      "timestamp"
+    ],
+    "summary_fragment": "Imported from external legacy verify artifact via checkbox-heuristic; confidence=low."
+  },
+  {
+    "case_id": "unparseable-fragment",
+    "fixture_name": "unparseable-fragment.verify.md",
+    "strategy": "manual-rewrite-fallback",
+    "confidence": "low",
+    "manual_review_required": true,
+    "expected_pass_fail_result": "fail",
+    "expected_checklist_result": "deferred",
+    "expected_reason_code": "MANUAL_CHECK_DEFERRED",
+    "expected_unresolved_fields": [
+      "criterion",
+      "method",
+      "evidence",
+      "result",
+      "reviewer",
+      "timestamp"
+    ],
+    "summary_fragment": "Imported from external legacy verify artifact via manual-rewrite-fallback; confidence=low."
+  }
+]

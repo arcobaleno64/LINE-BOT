@@ -1,0 +1,287 @@
+[
+  {
+    "case_id": "RT-001",
+    "title": "Research artifact contains Recommendation",
+    "phase": "static"
+  },
+  {
+    "case_id": "RT-002",
+    "title": "Confirmed Facts missing citation",
+    "phase": "static"
+  },
+  {
+    "case_id": "RT-003",
+    "title": "Uncertain Items missing UNVERIFIED marker",
+    "phase": "static"
+  },
+  {
+    "case_id": "RT-004",
+    "title": "High-risk premortem without blocking risk",
+    "phase": "static"
+  },
+  {
+    "case_id": "RT-005",
+    "title": "Blocked resume without improvement artifact",
+    "phase": "static"
+  },
+  {
+    "case_id": "RT-006",
+    "title": "Blocked resume with non-applied improvement",
+    "phase": "static"
+  },
+  {
+    "case_id": "RT-007",
+    "title": "Contract drift between root and template",
+    "phase": "static"
+  },
+  {
+    "case_id": "RT-008",
+    "title": "Obsidian drift",
+    "phase": "static"
+  },
+  {
+    "case_id": "RT-009",
+    "title": "Bootstrap missing contract guard",
+    "phase": "static"
+  },
+  {
+    "case_id": "RT-010",
+    "title": "Research artifact missing Sources section",
+    "phase": "static"
+  },
+  {
+    "case_id": "RT-011",
+    "title": "Code artifact Mapping To Plan malformed entry",
+    "phase": "static"
+  },
+  {
+    "case_id": "RT-012",
+    "title": "Verify artifact checklist reviewer field missing",
+    "phase": "static"
+  },
+  {
+    "case_id": "RT-013",
+    "title": "Git-backed scope drift auto-guard",
+    "phase": "static"
+  },
+  {
+    "case_id": "RT-014",
+    "title": "Historical commit-range diff reconstruction",
+    "phase": "static"
+  },
+  {
+    "case_id": "RT-015",
+    "title": "allow-scope-drift without decision waiver",
+    "phase": "static"
+  },
+  {
+    "case_id": "RT-016",
+    "title": "allow-scope-drift with explicit decision waiver",
+    "phase": "static"
+  },
+  {
+    "case_id": "RT-017",
+    "title": "Historical diff evidence checksum corruption",
+    "phase": "static"
+  },
+  {
+    "case_id": "RT-018",
+    "title": "GitHub provider-backed PR second-page scope drift",
+    "phase": "static"
+  },
+  {
+    "case_id": "RT-019",
+    "title": "Historical diff archive fallback reconstruction",
+    "phase": "static"
+  },
+  {
+    "case_id": "RT-020",
+    "title": "Historical diff archive corruption",
+    "phase": "static"
+  },
+  {
+    "case_id": "RT-021",
+    "title": "Auto-classify lightweight candidate without plan artifact",
+    "phase": "static"
+  },
+  {
+    "case_id": "RT-022",
+    "title": "Auto-classify escalates lightweight task with premortem",
+    "phase": "static"
+  },
+  {
+    "case_id": "RT-023",
+    "title": "Expired decision waiver is rejected",
+    "phase": "static"
+  },
+  {
+    "case_id": "RT-024",
+    "title": "GitHub provider-backed PR rejects non-allowlisted API host",
+    "phase": "static"
+  },
+  {
+    "case_id": "RT-025",
+    "title": "GitHub provider-backed PR accepts explicit allowlisted API host",
+    "phase": "static"
+  },
+  {
+    "case_id": "RT-026",
+    "title": "Oversized workflow artifact is rejected before parsing",
+    "phase": "static"
+  },
+  {
+    "case_id": "RT-027",
+    "title": "Oversized archive fallback is rejected before parsing",
+    "phase": "static"
+  },
+  {
+    "case_id": "RT-028",
+    "title": "Oversized provider response is rejected before JSON parsing",
+    "phase": "static"
+  },
+  {
+    "case_id": "RT-029",
+    "title": "README source/downstream wording drift",
+    "phase": "static"
+  },
+  {
+    "case_id": "RT-030",
+    "title": "External legacy unparseable import stays fail-closed",
+    "phase": "static"
+  },
+  {
+    "case_id": "RT-LIVE-950",
+    "title": "Role boundary live drill",
+    "phase": "live"
+  },
+  {
+    "case_id": "RT-LIVE-951",
+    "title": "Blocked / PDCA / resume live drill",
+    "phase": "live"
+  },
+  {
+    "case_id": "PR-001",
+    "title": "Violation input handling contract",
+    "phase": "prompt"
+  },
+  {
+    "case_id": "PR-002",
+    "title": "Role boundary contract",
+    "phase": "prompt"
+  },
+  {
+    "case_id": "PR-003",
+    "title": "Fake citation defense contract",
+    "phase": "prompt"
+  },
+  {
+    "case_id": "PR-004",
+    "title": "Mixed truth-source isolation contract",
+    "phase": "prompt"
+  },
+  {
+    "case_id": "PR-005",
+    "title": "Research recommendation boundary",
+    "phase": "prompt"
+  },
+  {
+    "case_id": "PR-006",
+    "title": "Blocked wording quality contract",
+    "phase": "prompt"
+  },
+  {
+    "case_id": "PR-007",
+    "title": "Premortem enforcement contract",
+    "phase": "prompt"
+  },
+  {
+    "case_id": "PR-008",
+    "title": "Artifact-only truth and completion contract",
+    "phase": "prompt"
+  },
+  {
+    "case_id": "PR-009",
+    "title": "Source/downstream sync split contract",
+    "phase": "prompt"
+  },
+  {
+    "case_id": "PR-010",
+    "title": "Research blocked preconditions and Gemini allowlist contract",
+    "phase": "prompt"
+  },
+  {
+    "case_id": "PR-011",
+    "title": "Implementation summary discipline contract",
+    "phase": "prompt"
+  },
+  {
+    "case_id": "PR-012",
+    "title": "Conflict to decision routing contract",
+    "phase": "prompt"
+  },
+  {
+    "case_id": "PR-013",
+    "title": "Decision artifact trigger matrix contract",
+    "phase": "prompt"
+  },
+  {
+    "case_id": "PR-014",
+    "title": "Decision artifact schema completeness contract",
+    "phase": "prompt"
+  },
+  {
+    "case_id": "PR-015",
+    "title": "External failure stop contract",
+    "phase": "prompt"
+  },
+  {
+    "case_id": "PR-016",
+    "title": "Decision-gated scope waiver contract",
+    "phase": "prompt"
+  },
+  {
+    "case_id": "PR-017",
+    "title": "Historical diff evidence contract",
+    "phase": "prompt"
+  },
+  {
+    "case_id": "PR-018",
+    "title": "Pinned diff evidence integrity contract",
+    "phase": "prompt"
+  },
+  {
+    "case_id": "PR-019",
+    "title": "GitHub provider-backed diff evidence contract",
+    "phase": "prompt"
+  },
+  {
+    "case_id": "PR-020",
+    "title": "Archive retention fallback contract",
+    "phase": "prompt"
+  },
+  {
+    "case_id": "PR-021",
+    "title": "Gemini memory-bank curator draft-only contract",
+    "phase": "prompt"
+  },
+  {
+    "case_id": "PR-022",
+    "title": "Claude CLI-first routing boundary contract",
+    "phase": "prompt"
+  },
+  {
+    "case_id": "PR-023",
+    "title": "Codex model/effort and subagent separation contract",
+    "phase": "prompt"
+  },
+  {
+    "case_id": "PR-024",
+    "title": "Gemini Tavily draft cache boundary contract",
+    "phase": "prompt"
+  },
+  {
+    "case_id": "PR-025",
+    "title": "Memory-bank librarian quality filter contract",
+    "phase": "prompt"
+  }
+]

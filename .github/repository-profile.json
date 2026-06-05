@@ -1,0 +1,15 @@
+{
+  "about": "LINE-BOT - LINE-BOT — ASP.NET Core LINE webhook bot (Baymax persona) with AI provider failover and HMAC-secured push API",
+  "topics": [
+    "multi-agent",
+    "developer-tools",
+    "workflow-template",
+    "gemini-cli",
+    "ai-orchestration",
+    "claude-code",
+    "harness-engineering",
+    "artifact-first",
+    "gate-guarded",
+    "premortem"
+  ]
+}
