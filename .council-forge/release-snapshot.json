@@ -1,0 +1,27 @@
+{
+  "schema": "council-forge/release-snapshot@1",
+  "released_snapshot_root": "027ea8d97ccfb50cce134bb1f9fdf26fc1725ecd09d761cb42b0198a24ec6b4b",
+  "algorithm": "sha256",
+  "propagated": [
+    {
+      "path": "artifacts/scripts/release_gate.py",
+      "sha256": "02b78de5d1dcf8a00e195217a67fedf4cd848f662c3f0dded2e641bf65d84c78"
+    },
+    {
+      "path": "artifacts/scripts/sast_gate.py",
+      "sha256": "0fe628f15c1464c30d4fa92960d6784b600ff2e782a26d4e5ff2f2595add6bdb"
+    },
+    {
+      "path": "artifacts/scripts/sbom_gate.py",
+      "sha256": "e402b8d6525bbbba1f922fadbc704b7dd5756965ff06786f418ac40d2f84b762"
+    },
+    {
+      "path": "artifacts/scripts/sca_gate.py",
+      "sha256": "dc2df939aa10f547d15c274d2054ea76d2b5ebf3de22253b46b377d18c134755"
+    },
+    {
+      "path": "artifacts/scripts/security_txt_gate.py",
+      "sha256": "3898609069415ec67a659203635cdaad20262ae056bcdee4cdfbd79d1aa67754"
+    }
+  ]
+}
