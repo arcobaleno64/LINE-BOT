@@ -4,8 +4,16 @@
   "algorithm": "sha256",
   "propagated": [
     {
+      "path": "artifacts/scripts/guard_contract_validator.py",
+      "sha256": "96f42811913dccabed15761359d392df1f42ced62d15da7f69d79c6a501db406"
+    },
+    {
       "path": "artifacts/scripts/release_gate.py",
       "sha256": "02b78de5d1dcf8a00e195217a67fedf4cd848f662c3f0dded2e641bf65d84c78"
+    },
+    {
+      "path": "artifacts/scripts/repo_security_scan.py",
+      "sha256": "db0462655e567c0074d3486f0458164512a7444fa0f17a4cba4e11f0b4f5fae5"
     },
     {
       "path": "artifacts/scripts/sast_gate.py",
@@ -22,6 +30,10 @@
     {
       "path": "artifacts/scripts/security_txt_gate.py",
       "sha256": "3898609069415ec67a659203635cdaad20262ae056bcdee4cdfbd79d1aa67754"
+    },
+    {
+      "path": "artifacts/scripts/test_security_scans.py",
+      "sha256": "c20ed720323b4199d322a00e0bc03b33a8651548927291ca5728241aa9f978f7"
     }
   ]
 }
