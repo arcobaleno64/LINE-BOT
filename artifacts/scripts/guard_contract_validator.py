@@ -28,7 +28,13 @@ EXACT_SYNC_FILES = [
     "artifacts/scripts/conftest.py",
     "artifacts/scripts/guard_contract_validator.py",
     "artifacts/scripts/prompt_regression_validator.py",
+    "artifacts/scripts/repo_security_scan.py",
     "artifacts/scripts/run_red_team_suite.py",
+    "artifacts/scripts/release_gate.py",
+    "artifacts/scripts/sast_gate.py",
+    "artifacts/scripts/sbom_gate.py",
+    "artifacts/scripts/sca_gate.py",
+    "artifacts/scripts/security_txt_gate.py",
     "artifacts/scripts/drills/prompt_regression_cases.json",
     "artifacts/scripts/guard_status_validator.py",
     "artifacts/scripts/migrate_artifact_schema.py",
@@ -444,32 +450,93 @@ def validate_required_phrases(root: Path) -> List[str]:
     return errors
 
 
-def detect_changed_files(root: Path) -> tuple[bool, set[str]]:
+def _has_git_dir(root: Path) -> bool:
+    """True if ``root`` or an ancestor contains a ``.git`` (dir or file) — a POSITIVE signal that
+    this is a git repo context, INDEPENDENT of whether the git binary is runnable. Used to tell a
+    genuine non-git bootstrap (no ``.git`` anywhere -> legit skip) apart from a real repo whose git
+    is missing / ownership-blocked (safe.directory) / corrupt (``.git`` present -> degraded ->
+    fail-closed). TASK-1090."""
+    try:
+        here = root.resolve()
+    except OSError:  # pragma: no cover - defensive (resolve rarely raises)
+        here = root
+    for d in (here, *here.parents):
+        if (d / ".git").exists():
+            return True
+    return False
+
+
+def detect_changed_files(root: Path) -> tuple[bool, set[str], list[str]]:
+    """Return ``(is_repo, changed, errors)`` for change-detection at ``root`` (TASK-1090).
+
+    - ``is_repo=False``  -> ``root`` is NOT a git work tree (or git is unavailable): a non-git
+      bootstrap context (e.g. a greenfield / tarball downstream scaffolded with
+      ``git_init=False``). Change-detection is then N/A — NOT an error, and NOT a fail-open.
+    - ``is_repo=True``   -> a git work tree. ``errors`` lists every change-detection probe that
+      FAILED. A non-empty ``errors`` means detection is DEGRADED: a caller that needs complete
+      coverage (e.g. ``validate_prompt_case_sync``) must FAIL CLOSED rather than treat the
+      partial result as "no changes" (a tracked edit could otherwise be silently missed).
+    """
+    # Decide repo-vs-non-repo FIRST so a non-git bootstrap is not conflated with a degraded
+    # detector. ``git rev-parse --is-inside-work-tree`` prints "true" only inside a work tree.
+    in_work_tree = False
+    rev_parse_rc = None
+    try:
+        probe = subprocess.run(
+            ["git", "-C", str(root), "rev-parse", "--is-inside-work-tree"],
+            capture_output=True, text=True, check=False, encoding="utf-8",
+        )
+        rev_parse_rc = probe.returncode
+        in_work_tree = (probe.returncode == 0 and probe.stdout.strip() == "true")
+    except FileNotFoundError:
+        rev_parse_rc = None              # git binary not installed
+    if not in_work_tree:
+        # rev-parse could not confirm a work tree. Only a root with NO ``.git`` anywhere is a
+        # genuine non-git bootstrap (legit skip). If a ``.git`` IS present, git is missing /
+        # ownership-blocked (safe.directory) / corrupt on a REAL repo -> that is a DEGRADED
+        # detector and MUST fail closed, not be mistaken for a bootstrap (TASK-1090; codex impl).
+        if _has_git_dir(root):
+            reason = "git executable not found" if rev_parse_rc is None else f"git rev-parse failed (exit {rev_parse_rc})"
+            return True, set(), [f"{reason} in a repo context (.git present) — change-detection unavailable"]
+        return False, set(), []          # no .git anywhere -> genuine non-git bootstrap
+
     commands = [
         ["git", "-C", str(root), "diff", "--name-only", "HEAD"],
         ["git", "-C", str(root), "diff", "--name-only", "--cached"],
         ["git", "-C", str(root), "ls-files", "--others", "--exclude-standard"],
     ]
-    available = False
     changed: set[str] = set()
+    errors: list[str] = []
     for command in commands:
         try:
             result = subprocess.run(command, capture_output=True, text=True, check=False, encoding="utf-8")
         except FileNotFoundError:
-            return False, set()
-        if result.returncode != 0:
+            errors.append(f"{' '.join(command)}: git not found")
             continue
-        available = True
+        if result.returncode != 0:
+            errors.append(f"{' '.join(command)}: exit {result.returncode}")
+            continue
         for line in result.stdout.splitlines():
             token = line.strip().replace("\\", "/")
             if token:
                 changed.add(token)
-    return available, changed
+    return True, changed, errors
 
 
 def validate_prompt_case_sync(root: Path) -> List[str]:
-    available, changed = detect_changed_files(root)
-    if not available or not changed:
+    is_repo, changed, errors = detect_changed_files(root)
+    if not is_repo:
+        # Non-git bootstrap (greenfield / tarball / scaffold git_init=False): no change-baseline,
+        # so prompt-contract sync is N/A. A deliberate, documented skip — NOT a silent fail-open.
+        return []
+    if errors:
+        # git work tree but a change-detection probe FAILED -> detection is DEGRADED. A tracked
+        # prompt edit could be silently missed, so FAIL CLOSED rather than pass (TASK-1090).
+        return [
+            "Cannot verify prompt-contract sync: git change-detection is degraded "
+            f"({'; '.join(errors)}). Refusing to pass silently (fail-closed)."
+        ]
+    if not changed:
         return []
     if changed.intersection(PROMPT_ENTRY_FILES) and not changed.intersection(PROMPT_REGRESSION_FILES):
         return [
@@ -764,6 +831,15 @@ def validate_raci_hybrid_sync(root: Path) -> None:
 
 
 def detect_raci_violations(file_path: Path, agent_identity: str, raci_matrix: Dict[str, set]) -> List[RaciViolation]:
+    """LEGACY / SUPERSEDED (TASK-1090): this artifact-type classifier has NO runtime caller.
+
+    The authoritative, live RACI enforcement path is ``workflow_constants.classify_path`` via the
+    ``--audit-raci`` CLI mode, which FAILS CLOSED on an ``unknown`` path category. This legacy
+    helper's "unmatched path -> code" default is deliberately retained because it is the CORRECT
+    classification for a real source file (a non-artifact file IS code); it is kept only for
+    historical reference and its own unit tests. New code MUST use ``classify_path`` /
+    ``--audit-raci`` rather than this function.
+    """
     allowed = raci_matrix.get(agent_identity, set())
     
     actual_type = "code (實檔修改)"

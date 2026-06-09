@@ -1,6 +1,7 @@
 """Unit tests for repo-local security scanning rules."""
 from __future__ import annotations
 
+import stat
 import sys
 from pathlib import Path
 
@@ -49,13 +50,19 @@ class TestPathHelpers:
     def test_read_text_guards(self, tmp_path: Path, monkeypatch):
         binary = tmp_path / "binary.bin"
         binary.write_bytes(b"abc\x00def")
-        assert rss.read_text(binary) is None
+        assert rss.read_text(binary) is None                       # NUL/binary -> deliberate skip
+
+        monkeypatch.setattr(rss, "MAX_FILE_BYTES", 4)
+        oversize = tmp_path / "big.txt"
+        oversize.write_bytes(b"abcdef")
+        assert rss.read_text(oversize) is None                     # oversize -> deliberate skip
 
         def boom(self):
             raise OSError("boom")
 
         monkeypatch.setattr(Path, "read_bytes", boom)
-        assert rss.read_text(tmp_path / "missing.txt") is None
+        with pytest.raises(rss.ScanReadError):                     # OSError -> FAIL-CLOSED (TASK-1088)
+            rss.read_text(tmp_path / "missing.txt")
 
     def test_iter_repo_files_excludes_non_text_and_skipped_paths(self, tmp_path: Path):
         _write(tmp_path / "docs" / "keep.md", "ok\n")
@@ -191,6 +198,111 @@ class TestRenderAndMain:
         captured = capsys.readouterr().out
         assert exit_code == 0
         assert "[OK] No findings detected" in captured
+
+
+class TestFailClosed:
+    """TASK-1088: a scan-coverage failure fails CLOSED (exit 2 / raise), never a silent exit 0.
+
+    Deliberate non-text skips (oversize/binary) stay skips but are surfaced (auditability).
+    """
+
+    def test_raise_walk_error(self):
+        with pytest.raises(rss.ScanReadError):
+            rss._raise_walk_error(OSError("scandir denied"))
+
+    def test_iter_repo_files_traversal_error_fails_closed(self, tmp_path: Path, monkeypatch):
+        # patch the module-local _walk_repo seam (NOT the global os.walk, which pytest itself uses)
+        def boom(root):
+            raise rss.ScanReadError("traversal failed")
+
+        monkeypatch.setattr(rss, "_walk_repo", boom)
+        with pytest.raises(rss.ScanReadError):
+            list(rss.iter_repo_files(tmp_path))
+
+    def test_iter_repo_files_stat_error_fails_closed(self, tmp_path: Path, monkeypatch):
+        # Path.is_file() SWALLOWS OSError; iter_repo_files uses path.stat() which RAISES -> fail-closed
+        _write(tmp_path / "a.py", "x\n")
+
+        def boom(self):
+            raise OSError("stat denied")
+
+        monkeypatch.setattr(Path, "stat", boom)
+        with pytest.raises(rss.ScanReadError):
+            list(rss.iter_repo_files(tmp_path))
+
+    def test_iter_repo_files_skips_non_regular(self, tmp_path: Path, monkeypatch):
+        _write(tmp_path / "a.py", "x\n")
+
+        class _DirStat:
+            st_mode = stat.S_IFDIR
+
+        monkeypatch.setattr(Path, "stat", lambda self: _DirStat())
+        assert list(rss.iter_repo_files(tmp_path)) == []           # non-regular entry skipped
+
+    def test_main_bad_root_fails_closed(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]):
+        assert rss.main(["--root", str(tmp_path / "nope"), "secrets"]) == 2
+        assert "does not exist or is not a directory" in capsys.readouterr().err
+
+    def test_main_resolve_error_fails_closed(self, monkeypatch, capsys: pytest.CaptureFixture[str]):
+        def boom(self, *a, **k):
+            raise OSError("resolve loop")
+
+        monkeypatch.setattr(Path, "resolve", boom)
+        assert rss.main(["--root", "whatever", "secrets"]) == 2
+        assert "cannot resolve scan root" in capsys.readouterr().err
+
+    def test_main_reports_skips_on_abort(self, tmp_path: Path, monkeypatch, capsys: pytest.CaptureFixture[str]):
+        f_skip = tmp_path / "artifacts" / "scripts" / "skip.py"
+        _write(f_skip, "x\n")
+        f_err = tmp_path / "artifacts" / "scripts" / "err.py"
+        _write(f_err, "y\n")
+        monkeypatch.setattr(
+            rss, "iter_repo_files",
+            lambda root: [("artifacts/scripts/skip.py", f_skip), ("artifacts/scripts/err.py", f_err)],
+        )
+
+        def rt(path):
+            if path == f_skip:
+                return None                          # deliberate skip recorded first
+            raise rss.ScanReadError("read denied")    # then a hard error aborts
+
+        monkeypatch.setattr(rss, "read_text", rt)
+        assert rss.main(["--root", str(tmp_path), "secrets"]) == 2
+        err = capsys.readouterr().err
+        assert "skip.py" in err and "skipped (oversize/binary" in err  # skip surfaced despite abort
+        assert "scan aborted" in err
+
+    def test_main_read_error_fails_closed_all_commands(self, tmp_path: Path, monkeypatch, capsys: pytest.CaptureFixture[str]):
+        _write(tmp_path / "artifacts" / "scripts" / "a.py", "x\n")
+
+        def boom(path):
+            raise rss.ScanReadError("read denied")
+
+        monkeypatch.setattr(rss, "read_text", boom)
+        for cmd in (["secrets"], ["static"], ["sast", "--format", "sarif"]):
+            assert rss.main(["--root", str(tmp_path), *cmd]) == 2
+        assert "scan aborted" in capsys.readouterr().err
+
+    def test_main_surfaces_deliberate_skips(self, tmp_path: Path, monkeypatch, capsys: pytest.CaptureFixture[str]):
+        sample = tmp_path / "artifacts" / "scripts" / "big.py"
+        _write(sample, "x\n")
+        monkeypatch.setattr(rss, "iter_repo_files", lambda root: [("artifacts/scripts/big.py", sample)])
+        monkeypatch.setattr(rss, "read_text", lambda path: None)    # deliberate non-text skip
+        for cmd in (["secrets"], ["static"], ["sast", "--format", "text"]):
+            assert rss.main(["--root", str(tmp_path), *cmd]) == 0
+        err = capsys.readouterr().err
+        assert "skipped (oversize/binary" in err
+        assert "artifacts/scripts/big.py" in err
+
+    def test_scan_helpers_record_skips(self, tmp_path: Path, monkeypatch):
+        sample = tmp_path / "artifacts" / "scripts" / "big.py"
+        _write(sample, "x\n")
+        monkeypatch.setattr(rss, "iter_repo_files", lambda root: [("artifacts/scripts/big.py", sample)])
+        monkeypatch.setattr(rss, "read_text", lambda path: None)
+        for fn in (rss.scan_secrets, rss.scan_static, rss.scan_sast):
+            sk: list[str] = []
+            assert fn(tmp_path, skipped=sk) == []
+            assert sk == ["artifacts/scripts/big.py"]
 
 
 def test_cli_json_output_for_secrets(tmp_path: Path, capsys: pytest.CaptureFixture[str]):
