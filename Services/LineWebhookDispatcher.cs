@@ -125,7 +125,7 @@ public class LineWebhookDispatcher : ILineWebhookDispatcher
                 logContext.SourceType);
             await _reply.ReplyTextAsync(
                 evt.ReplyToken,
-                "目前我支援文字、圖片與檔案（txt/md/csv/json/xml/log/pdf）。PDF 目前先支援文字型 PDF。",
+                "目前我支援文字、圖片與檔案（txt/md/csv/json/xml/log、文字型 PDF、docx/xlsx/pptx）。圖片型或掃描型 PDF 目前無法擷取文字。",
                 logContext,
                 ct);
             return;

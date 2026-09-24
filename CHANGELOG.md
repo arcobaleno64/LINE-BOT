@@ -23,11 +23,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed functionality
 
 ### Fixed
+- Unsupported-message guidance now lists the supported Office formats and clarifies that scanned PDFs cannot be extracted
 - Docker image build no longer fails from a fixed UID collision when creating the non-root runtime user
 - Render deployment verification is now exercised successfully in GitHub Actions with `/health` = `200` and invalid webhook signature = `401`
 
 ### Security
-- Security-related changes
+- Updated the bundled SQLite native library to `SQLitePCLRaw` 2.1.13 to address the NU1903 advisory
 
 ---
 

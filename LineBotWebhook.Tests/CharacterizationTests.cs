@@ -113,15 +113,17 @@ public class CharacterizationTests
         Assert.Contains(expectedKeyPhrase, reply, StringComparison.Ordinal);
     }
 
-    [Fact]
-    public async Task GroupTextWithoutMention_IsIgnored()
+    [Theory]
+    [InlineData("group")]
+    [InlineData("room")]
+    public async Task GroupTextWithoutMention_IsIgnored(string sourceType)
     {
         var config = TestFactory.BuildConfig();
         var ai = new FakeAiService();
         var handler = new RecordingHttpMessageHandler((request, ct) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)));
         var textHandler = TestFactory.CreateTextHandler(config, ai, handler);
 
-        var evt = BuildTextEvent("group", "大家好", mentioned: false);
+        var evt = BuildTextEvent(sourceType, "大家好", mentioned: false);
         var handled = await textHandler.HandleAsync(evt, "https://unit.test", CancellationToken.None);
 
         Assert.True(handled);
@@ -129,8 +131,10 @@ public class CharacterizationTests
         Assert.Empty(handler.Requests);
     }
 
-    [Fact]
-    public async Task GroupTextWithMention_IsHandled()
+    [Theory]
+    [InlineData("group")]
+    [InlineData("room")]
+    public async Task GroupTextWithMention_IsHandled(string sourceType)
     {
         var config = TestFactory.BuildConfig();
         var ai = new FakeAiService
@@ -141,7 +145,7 @@ public class CharacterizationTests
         var handler = new RecordingHttpMessageHandler((request, ct) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)));
         var textHandler = TestFactory.CreateTextHandler(config, ai, handler);
 
-        var evt = BuildTextEvent("group", "@bot 哈囉", mentioned: true);
+        var evt = BuildTextEvent(sourceType, "@bot 哈囉", mentioned: true);
         var handled = await textHandler.HandleAsync(evt, "https://unit.test", CancellationToken.None);
 
         Assert.True(handled);
@@ -381,6 +385,33 @@ public class CharacterizationTests
 
         Assert.True(handled);
         Assert.Equal(0, ai.ImageCalls);
+        Assert.Empty(handler.Requests);
+    }
+
+    [Theory]
+    [InlineData("group")]
+    [InlineData("room")]
+    public async Task FileInGroup_WhenDisabled_IsIgnored(string sourceType)
+    {
+        var config = TestFactory.BuildConfig(new Dictionary<string, string?>
+        {
+            ["App:AllowGroupFileHandling"] = "false"
+        });
+        var ai = new FakeAiService();
+        var handler = new RecordingHttpMessageHandler((request, ct) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)));
+        var fileHandler = TestFactory.CreateFileHandler(config, ai, handler);
+        var evt = new LineEvent
+        {
+            Type = "message",
+            ReplyToken = "r1",
+            Source = new LineSource { Type = sourceType, GroupId = "g1", RoomId = "r1", UserId = "u1" },
+            Message = new LineMessage { Id = "m1", Type = "file", FileName = "a.txt" }
+        };
+
+        var handled = await fileHandler.HandleAsync(evt, "https://unit.test", CancellationToken.None);
+
+        Assert.True(handled);
+        Assert.Equal(0, ai.FileCalls);
         Assert.Empty(handler.Requests);
     }
 
@@ -680,7 +711,7 @@ public class CharacterizationTests
         await dispatcher.DispatchAsync(evt, "https://unit.test", CancellationToken.None);
 
         var replyText = TestFactory.GetLastReplyText(handler);
-        Assert.Equal("目前我支援文字、圖片與檔案（txt/md/csv/json/xml/log/pdf）。PDF 目前先支援文字型 PDF。", replyText);
+        Assert.Equal("目前我支援文字、圖片與檔案（txt/md/csv/json/xml/log、文字型 PDF、docx/xlsx/pptx）。圖片型或掃描型 PDF 目前無法擷取文字。", replyText);
     }
 
     [Fact]

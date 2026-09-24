@@ -4,6 +4,7 @@ using LineBotWebhook.Services;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Data.Sqlite;
 
 namespace LineBotWebhook.Tests;
 
@@ -11,6 +12,18 @@ public class GroupRegistrationStoreTests : IDisposable
 {
     private readonly string _dbPath;
     private readonly GroupRegistrationStore _store;
+
+    [Fact]
+    public void BundledSqlite_IsNewEnoughForSecurityAdvisory()
+    {
+        using var connection = new SqliteConnection("Data Source=:memory:");
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT sqlite_version()";
+
+        var version = Version.Parse(Assert.IsType<string>(command.ExecuteScalar()));
+        Assert.True(version >= new Version(3, 50, 2), $"Bundled SQLite {version} is below 3.50.2");
+    }
 
     public GroupRegistrationStoreTests()
     {
