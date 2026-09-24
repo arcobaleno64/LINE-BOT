@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Render deployment verification is now exercised successfully in GitHub Actions with `/health` = `200` and invalid webhook signature = `401`
 
 ### Security
+- Removed the published persona profile and switched production to a neutral assistant identity
 - Updated the bundled SQLite native library to `SQLitePCLRaw` 2.1.13 to address the NU1903 advisory
 
 ---

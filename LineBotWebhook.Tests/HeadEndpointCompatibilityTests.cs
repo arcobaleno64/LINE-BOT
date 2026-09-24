@@ -2,19 +2,31 @@ using System.Net;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using LineBotWebhook.Services;
 
 namespace LineBotWebhook.Tests;
 
 public class HeadEndpointCompatibilityTests : IClassFixture<HeadEndpointCompatibilityTests.TestAppFactory>
 {
     private readonly HttpClient _client;
+    private readonly TestAppFactory _factory;
 
     public HeadEndpointCompatibilityTests(TestAppFactory factory)
     {
+        _factory = factory;
         _client = factory.CreateClient(new WebApplicationFactoryClientOptions
         {
             AllowAutoRedirect = false
         });
+    }
+
+    [Fact]
+    public void ProductionStartup_UsesNeutralAssistantIdentity()
+    {
+        var persona = _factory.Services.GetRequiredService<PersonaContext>();
+        Assert.Equal(PersonaContext.DefaultPrompt, persona.SystemPrompt);
+        Assert.DoesNotContain("教授", persona.SystemPrompt, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -14,15 +14,8 @@ var builder = WebApplication.CreateBuilder(args);
 // ---------- DI: HttpClient ----------
 builder.Services.AddHttpClient();
 
-// ---------- DI: Persona Injection ----------
-var personaFile = Path.Combine(builder.Environment.ContentRootPath, "persona_baymax.txt");
-var defaultPersona = "你是文件分析助理。全程使用繁體中文，不自稱 AI。說話極度精簡，多數訊息僅一到兩句話，以提問推進而非直接下指令。";
-var personaText = File.Exists(personaFile) ? File.ReadAllText(personaFile) : defaultPersona;
-if (string.IsNullOrWhiteSpace(personaText))
-{
-    personaText = defaultPersona;
-}
-builder.Services.AddSingleton(new PersonaContext(personaText));
+// ---------- DI: Assistant identity ----------
+builder.Services.AddSingleton(new PersonaContext(PersonaContext.DefaultPrompt));
 
 // ---------- DI: Conversation History ----------
 builder.Services.AddSingleton<IConversationSummaryQueue, ConversationSummaryQueue>();

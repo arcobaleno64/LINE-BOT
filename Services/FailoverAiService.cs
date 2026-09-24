@@ -36,7 +36,7 @@ public class FailoverAiService : IAiService
             config,
             history,
             loggerFactory,
-            new PersonaContext("你是文件分析助理。全程使用繁體中文，不自稱 AI。說話極度精簡，多數訊息僅一到兩句話，以提問推進而非直接下指令。"),
+            new PersonaContext(PersonaContext.DefaultPrompt),
             logger)
     {
     }
