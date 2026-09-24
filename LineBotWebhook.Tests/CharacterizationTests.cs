@@ -366,8 +366,10 @@ public class CharacterizationTests
         Assert.Contains("• 第二項", replyText!, StringComparison.Ordinal);
     }
 
-    [Fact]
-    public async Task ImageInGroup_IsIgnored()
+    [Theory]
+    [InlineData("group")]
+    [InlineData("room")]
+    public async Task ImageInGroup_IsIgnored(string sourceType)
     {
         var config = TestFactory.BuildConfig();
         var ai = new FakeAiService();
@@ -377,7 +379,7 @@ public class CharacterizationTests
         {
             Type = "message",
             ReplyToken = "r1",
-            Source = new LineSource { Type = "group", GroupId = "g1", UserId = "u1" },
+            Source = new LineSource { Type = sourceType, GroupId = sourceType == "group" ? "g1" : null, RoomId = sourceType == "room" ? "r1" : null, UserId = "u1" },
             Message = new LineMessage { Id = "m1", Type = "image" }
         };
 
@@ -487,8 +489,11 @@ public class CharacterizationTests
         Assert.Contains("掃描型或圖片型 PDF", replyText!, StringComparison.Ordinal);
     }
 
-    [Fact]
-    public async Task FileSupported_IncludesDownloadUrl()
+    [Theory]
+    [InlineData("user")]
+    [InlineData("group")]
+    [InlineData("room")]
+    public async Task FileSupported_IncludesDownloadUrl(string sourceType)
     {
         var config = TestFactory.BuildConfig();
         var ai = new FakeAiService
@@ -515,7 +520,7 @@ public class CharacterizationTests
         {
             Type = "message",
             ReplyToken = "r1",
-            Source = new LineSource { Type = "user", UserId = "u1" },
+            Source = new LineSource { Type = sourceType, GroupId = sourceType == "group" ? "g1" : null, RoomId = sourceType == "room" ? "r1" : null, UserId = "u1" },
             Message = new LineMessage { Id = "m1", Type = "file", FileName = "a.txt" }
         };
 
