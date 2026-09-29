@@ -149,19 +149,11 @@ Claude 若覆寫 routing，必須在 plan / decision / final summary 中記錄�
 
 **Rule**: 非 upstream PR task 時，禁止動 upstream-pr/ 目錄。
 
-### Template Sync（source template repo）
+### Template Sync（downstream terminal repo）
 
-此 repo 以 `.council-forge-source-repo` 標記為 source template repo。
+本 repo 是由 council-forge `template/` 複製出來的 downstream terminal repo：不得再建立新的 `template/`，而是只維護 root 文件與 `OBSIDIAN.md`。本 downstream terminal repo 不再建立新的 `template/`，只維護 root 文件與 `OBSIDIAN.md`。
 
-修改以下檔案後，必須同步到 `template/` + 推送：
-
-workflow files: CLAUDE.md、GEMINI.md、CODEX.md、AGENTS.md、docs/*、BOOTSTRAP_PROMPT.md、OBSIDIAN.md、guard scripts
-
-同步範圍包含 `OBSIDIAN.md` 與 `template/OBSIDIAN.md`。執行 `artifacts/scripts/guard_contract_validator.py` 驗證。任一同步缺漏（包含 Obsidian 入口）都視為 workflow 變更未完成。
-
-修改任何 workflow file 後，必須同步變更到 `template/`。專案特定引用泛化為 placeholders。必須同步更新 `README.md`。任一同步缺漏（包含 Obsidian 入口）都視為 workflow 變更未完成。
-
-由 `template/` 複製出去的新專案屬於 downstream terminal repo，不得再建立新的 `template/`，而是只維護 root 文件與 `OBSIDIAN.md`。本 downstream terminal repo 不再建立新的 `template/`，只維護 root 文件與 `OBSIDIAN.md`。
+修改 workflow files（CLAUDE.md、GEMINI.md、CODEX.md、AGENTS.md、docs/*、BOOTSTRAP_PROMPT.md、OBSIDIAN.md、guard scripts）後，執行 `artifacts/scripts/guard_contract_validator.py` 驗證。
 
 詳見 docs/orchestration-workflow.md §9
 

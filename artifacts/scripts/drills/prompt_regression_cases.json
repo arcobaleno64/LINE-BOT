@@ -832,5 +832,29 @@
         "note": "Review wrapper enforces generous bounds for diff-driven prompts."
       }
     ]
+  },
+  {
+    "id": "PR-033",
+    "applies_to": "downstream",
+    "title": "Downstream Template Sync Scope",
+    "description": "Downstream terminal repo CLAUDE.md must state downstream status, refuse nested template/, and drop source-mode template sync duties.",
+    "assertions": [
+      {
+        "file": "CLAUDE.md",
+        "must_contain_all": [
+          "downstream terminal repo",
+          "不得再建立新的 `template/`",
+          "不再建立新的 `template/`",
+          "只維護 root 文件",
+          "OBSIDIAN.md",
+          "guard_contract_validator.py"
+        ],
+        "must_not_contain_any": [
+          "修改以下檔案後，必須同步到 `template/` + 推送",
+          "修改任何 workflow file 後，必須同步變更到 `template/`"
+        ],
+        "note": "Downstream Claude prompt keeps guard validation but must not carry source-mode template sync duties."
+      }
+    ]
   }
 ]
