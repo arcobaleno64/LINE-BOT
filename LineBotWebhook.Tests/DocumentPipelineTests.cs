@@ -82,7 +82,8 @@ public class DocumentPipelineTests
         Assert.True(result.SelectedChunks.Count > 1);
         Assert.True(result.SelectedChunks.Count < result.AllChunks.Count);
         Assert.Contains("請只根據我提供的文件片段整理內容", result.GroundedPrompt, StringComparison.Ordinal);
-        Assert.Contains("未明確提及", result.GroundedPrompt, StringComparison.Ordinal);
+        Assert.Contains("目前提供的文件片段未涵蓋", result.GroundedPrompt, StringComparison.Ordinal);
+        Assert.Contains("不得把片段缺少資訊寫成「全文未提及」", result.GroundedPrompt, StringComparison.Ordinal);
         Assert.DoesNotContain("回答問題", result.GroundedPrompt, StringComparison.Ordinal);
     }
 
@@ -117,6 +118,8 @@ public class DocumentPipelineTests
         Assert.Equal(DocumentTaskMode.QuestionAnswer, result.Mode);
         Assert.Contains("截止日", result.SelectedContext, StringComparison.Ordinal);
         Assert.Contains("無法確認", result.GroundedPrompt, StringComparison.Ordinal);
+        Assert.Contains("目前提供的文件片段未涵蓋", result.GroundedPrompt, StringComparison.Ordinal);
+        Assert.Contains("不得把片段缺少資訊推論為全文未提及", result.GroundedPrompt, StringComparison.Ordinal);
         Assert.Contains("不得使用常識、慣例或上下文推測補完答案", result.GroundedPrompt, StringComparison.Ordinal);
     }
 
@@ -296,6 +299,78 @@ public class DocumentPipelineTests
             .GetProperty("contents").EnumerateArray().First();
         Assert.Equal("下載整理檔", footerButton.GetProperty("action").GetProperty("label").GetString());
         Assert.Contains("https://unit.test/downloads/", footerButton.GetProperty("action").GetProperty("uri").GetString()!, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task FileHandler_PartialSummary_LabelsScopeInPromptReplyAndDownload()
+    {
+        var captured = new List<string>();
+        var config = TestFactory.BuildConfig();
+        var ai = new FakeAiService
+        {
+            OnTextAsync = (message, userKey, ct, enableQuickReplies) =>
+            {
+                captured.Add(message);
+                return Task.FromResult("第12節至第16節未明確提及。");
+            }
+        };
+        var longText = string.Join(
+            "\n\n",
+            Enumerable.Range(1, 48).Select(i =>
+                $"第{i}節：{string.Concat(Enumerable.Repeat("本節包含明確的政策、決策依據與後續作法，需保留作為全文回查測試內容。", 20))}"));
+        var handler = new RecordingHttpMessageHandler((request, ct) =>
+        {
+            if (request.RequestUri!.ToString().Contains("api-data.line.me", StringComparison.Ordinal))
+            {
+                var response = new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new ByteArrayContent(Encoding.UTF8.GetBytes(longText))
+                };
+                response.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("text/plain");
+                return Task.FromResult(response);
+            }
+
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK));
+        });
+        var files = new GeneratedFileService();
+        var fileHandler = TestFactory.CreateFileHandler(config, ai, handler, files: files);
+        var evt = new LineEvent
+        {
+            Type = "message",
+            ReplyToken = "r-scope",
+            Source = new LineSource { Type = "user", UserId = "u1" },
+            Message = new LineMessage { Id = "m-scope", Type = "file", FileName = "report.txt" }
+        };
+
+        await fileHandler.HandleAsync(evt, "https://unit.test", CancellationToken.None);
+
+        var aiPrompt = Assert.Single(captured);
+        Assert.Contains("目前提供的文件片段未涵蓋", aiPrompt, StringComparison.Ordinal);
+        Assert.Contains("不得把片段缺少資訊寫成「全文未提及」", aiPrompt, StringComparison.Ordinal);
+
+        using var reply = TestFactory.GetLastReplyPayload(handler)!;
+        var displayedText = reply.RootElement.GetProperty("messages")[0]
+            .GetProperty("contents").GetProperty("body")
+            .GetProperty("contents")[2].GetProperty("text").GetString()!;
+        Assert.Contains("範圍提醒", displayedText, StringComparison.Ordinal);
+        Assert.Contains("未逐段檢查全文", displayedText, StringComparison.Ordinal);
+        Assert.Contains("第12節至第16節未明確提及", displayedText, StringComparison.Ordinal);
+
+        var downloadUri = reply.RootElement.GetProperty("messages")[0]
+            .GetProperty("contents").GetProperty("footer")
+            .GetProperty("contents")[0].GetProperty("action").GetProperty("uri").GetString()!;
+        var token = downloadUri.Split('/').Last();
+        var generatedFile = Assert.IsType<GeneratedFileService.GeneratedFile>(files.Get(token));
+        try
+        {
+            var downloadedContent = await File.ReadAllTextAsync(generatedFile.FilePath);
+            Assert.Contains("範圍提醒", downloadedContent, StringComparison.Ordinal);
+            Assert.Contains("不代表原文件沒有", downloadedContent, StringComparison.Ordinal);
+        }
+        finally
+        {
+            File.Delete(generatedFile.FilePath);
+        }
     }
 
     private static string BuildLongDocument(int paragraphs, string marker)

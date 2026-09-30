@@ -1,10 +1,53 @@
 using System.Net;
+using System.Text.Json;
 using LineBotWebhook.Services;
 
 namespace LineBotWebhook.Tests;
 
 public class GeminiServiceTests
 {
+    [Fact]
+    public async Task FollowUp_ContainsPriorDocumentScopeGuardInConversationHistory()
+    {
+        var requestBodies = new List<string>();
+        var handler = new RecordingHttpMessageHandler(async (request, ct) =>
+        {
+            requestBodies.Add(await request.Content!.ReadAsStringAsync(ct));
+            return BuildSuccessResponse("收到");
+        });
+        var config = TestFactory.BuildConfig(new Dictionary<string, string?>
+        {
+            ["Ai:Gemini:ApiKey"] = "primary-key",
+            ["Ai:Gemini:Model"] = "gemini-2.5-flash"
+        });
+        var service = new GeminiService(
+            new HttpClient(handler),
+            config,
+            new ConversationHistoryService(),
+            new TestLogger<GeminiService>());
+        const string documentPrompt = """
+系統可能只提供全文中的部分片段。若所需章節或資訊不在目前片段中，請寫「目前提供的文件片段未涵蓋」或「無法確認」；不得把片段缺少資訊寫成「全文未提及」或推論為原文件不存在。
+
+[片段 1]
+第一節：文件內容。
+""";
+        const string followUp = "請從第10節續整理，一直到第16節";
+
+        _ = await service.GetReplyAsync(documentPrompt, "u1", CancellationToken.None);
+        _ = await service.GetReplyAsync(followUp, "u1", CancellationToken.None);
+
+        Assert.Equal(2, requestBodies.Count);
+        using var followUpRequest = JsonDocument.Parse(requestBodies[1]);
+        var requestTexts = followUpRequest.RootElement.GetProperty("contents")
+            .EnumerateArray()
+            .SelectMany(turn => turn.GetProperty("parts").EnumerateArray())
+            .Select(part => part.GetProperty("text").GetString())
+            .Where(text => text is not null)
+            .ToArray();
+        Assert.Contains(documentPrompt, requestTexts);
+        Assert.Contains(followUp, requestTexts);
+    }
+
     [Fact]
     public async Task PrimaryKey_PrimaryModel_Succeeds_WithoutUsingSecondary()
     {

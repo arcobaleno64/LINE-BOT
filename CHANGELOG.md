@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed functionality
 
 ### Fixed
+- Partial document summaries now disclose selected-chunk coverage and distinguish missing excerpt evidence from absence in the full document
 - Unsupported-message guidance now lists the supported Office formats and clarifies that scanned PDFs cannot be extracted
 - Docker image build no longer fails from a fixed UID collision when creating the non-root runtime user
 - Render deployment verification is now exercised successfully in GitHub Actions with `/health` = `200` and invalid webhook signature = `401`

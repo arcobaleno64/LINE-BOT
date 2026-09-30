@@ -117,12 +117,16 @@ public class FileMessageHandler : IFileMessageHandler
         if (aiReply is null)
             return true;
 
+        var coverageNotice = BuildCoverageNotice(preparedDocument);
+        var replyContent = string.IsNullOrEmpty(coverageNotice)
+            ? aiReply
+            : $"{coverageNotice}\n\n{aiReply}";
         var downloadToken = _files.SaveTextFile(
             Path.GetFileNameWithoutExtension(fileName) + "-整理摘要.md",
-            BuildSummaryFileContent(fileName, mimeType, aiReply));
+            BuildSummaryFileContent(fileName, mimeType, replyContent));
         var downloadUrl = $"{publicBaseUrl}/downloads/{downloadToken}";
 
-        var sanitizedReply = LineReplyTextFormatter.SanitizeForLine(aiReply);
+        var sanitizedReply = LineReplyTextFormatter.SanitizeForLine(replyContent);
 
         if (sanitizedReply.Length <= _flexBodyMaxLength)
         {
@@ -169,5 +173,13 @@ public class FileMessageHandler : IFileMessageHandler
 
 {summary}
 """;
+    }
+
+    private static string? BuildCoverageNotice(DocumentGroundingResult document)
+    {
+        if (document.AllChunks.Count == 0 || document.SelectedChunks.Count >= document.AllChunks.Count)
+            return null;
+
+        return $"⚠️ 範圍提醒：本次僅整理系統選取的 {document.SelectedChunks.Count}/{document.AllChunks.Count} 個文件片段，未逐段檢查全文。「未明確提及」或「無法確認」只表示選取片段沒有依據，不代表原文件沒有；要核對其他章節，請貼上該段原文。";
     }
 }
