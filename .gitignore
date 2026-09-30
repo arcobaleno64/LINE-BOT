@@ -26,3 +26,8 @@ Thumbs.db
 .continue/
 nul
 persona_baymax.txt
+
+# Local private persona corpus and replay artifacts
+/data/
+/docs/persona-*
+/scripts/__pycache__/

@@ -29,6 +29,12 @@
 - General user guide: [USER_GUIDE.md](USER_GUIDE.md)
 - Non-engineer decision and document-review guide (Traditional Chinese): [USER_GUIDE_NON_ENGINEER.zh-TW.md](USER_GUIDE_NON_ENGINEER.zh-TW.md)
 
+### Private thinking assistant (local experiment)
+
+Keep the private corpus and replay artifacts outside the public Git history. `scripts/validate-private-review.py` checks that an approved I06 V3 projection matches its pinned hash and payload contract. It reads local files only, makes no AI requests, and does not print document or conversation content. Passing this check does not prove that re-identification is impossible; a human must still review the projection before cloud use.
+
+The existing LINE Bot is a separate workflow. Its text, image, document, and search requests may reach external services; the local projection check does not apply to Bot traffic.
+
 ---
 
 ## Product Overview

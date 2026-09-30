@@ -29,6 +29,12 @@
 - 一般使用者操作手冊：[USER_GUIDE.md](USER_GUIDE.md)
 - 非工程師決策與審稿手冊：[USER_GUIDE_NON_ENGINEER.zh-TW.md](USER_GUIDE_NON_ENGINEER.zh-TW.md)
 
+### 私人思考助手（本機實驗）
+
+私人語料及回測產物留在儲存庫外，不應提交到公開 Git 歷史。`scripts/validate-private-review.py` 可檢查已人工核准的 I06 V3 去識別化請求是否符合固定雜湊與輸入契約；它只在本機讀檔，不呼叫 AI，也不輸出文件或對話內容。此檢查無法證明資料不會被重新識別，送往雲端前仍須人工審閱。
+
+現有 LINE Bot 是獨立流程；文字、圖片、文件與搜尋請求可能送往外部服務，本機實驗的去識別化檢查不會自動套用至 Bot。
+
 ---
 
 ## 產品定位
