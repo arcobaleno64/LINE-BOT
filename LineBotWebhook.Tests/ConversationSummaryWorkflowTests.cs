@@ -28,6 +28,29 @@ public class ConversationSummaryWorkflowTests
     }
 
     [Fact]
+    public void ConversationHistoryService_QueuedSummaryFromClearedSession_CannotReadNewSessionMessages()
+    {
+        var queue = new FakeConversationSummaryQueue();
+        var history = new ConversationHistoryService(queue, NullLogger<ConversationHistoryService>.Instance, maxRounds: 2, idleMinutes: -1);
+
+        history.Append("user-1", "old-user-1", "old-assistant-1");
+        history.Append("user-1", "old-user-2", "old-assistant-2");
+        history.Append("user-1", "old-user-3", "old-assistant-3");
+        var staleWorkItem = Assert.Single(queue.Items);
+
+        history.Clear("user-1");
+        history.Append("user-1", "new-user-1", "new-assistant-1");
+        history.Append("user-1", "new-user-2", "new-assistant-2");
+        history.Append("user-1", "new-user-3", "new-assistant-3");
+        var currentWorkItem = queue.Items.Last();
+
+        Assert.False(history.TryGetSummaryRequest(staleWorkItem, out _));
+        Assert.True(history.TryGetSummaryRequest(currentWorkItem, out var request));
+        Assert.NotNull(request);
+        Assert.All(request!.PendingMessages, message => Assert.StartsWith("new-", message.Content, StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task ConversationSummaryWorker_Success_UpdatesSummary_TrimsMessages_AndClearsSummarizing()
     {
         var queue = new ConversationSummaryQueue(new TestLogger<ConversationSummaryQueue>());
@@ -110,6 +133,40 @@ public class ConversationSummaryWorkflowTests
             Assert.DoesNotContain("raw-summary=secret", error.Message, StringComparison.Ordinal);
             Assert.DoesNotContain("raw-user-text=u3", error.Message, StringComparison.Ordinal);
         }
+    }
+
+    [Fact]
+    public async Task ConversationSummaryWorker_CompletionAfterClear_DoesNotRestoreClearedSummary()
+    {
+        var queue = new ConversationSummaryQueue(new TestLogger<ConversationSummaryQueue>());
+        var history = new ConversationHistoryService(queue, NullLogger<ConversationHistoryService>.Instance, maxRounds: 2, idleMinutes: -1);
+        var generationStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseGeneration = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var generator = new FakeConversationSummaryGenerator
+        {
+            OnGenerateAsync = async (existingSummary, pendingMessages, ct) =>
+            {
+                generationStarted.TrySetResult();
+                return await releaseGeneration.Task;
+            }
+        };
+
+        history.Append("user-1", "old-user-1", "old-assistant-1");
+        history.Append("user-1", "old-user-2", "old-assistant-2");
+        history.Append("user-1", "old-user-3", "old-assistant-3");
+
+        using var worker = new ConversationSummaryWorker(queue, history, generator, new TestLogger<ConversationSummaryWorker>());
+        await worker.StartAsync(CancellationToken.None);
+        await generationStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        history.Clear("user-1");
+        history.Append("user-1", "new-user", "new-assistant");
+        releaseGeneration.SetResult("summary from cleared history");
+
+        await worker.StopAsync(CancellationToken.None);
+
+        var messages = history.GetHistory("user-1");
+        Assert.Equal(["new-user", "new-assistant"], messages.Select(message => message.Content));
     }
 
     [Fact]

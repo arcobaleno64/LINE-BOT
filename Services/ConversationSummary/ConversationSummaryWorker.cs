@@ -27,27 +27,36 @@ public sealed class ConversationSummaryWorker : BackgroundService
         {
             await foreach (var item in _queue.DequeueAllAsync(stoppingToken))
             {
-                if (!_history.TryGetSummaryRequest(item.UserKey, out var request) || request is null)
+                if (!_history.TryGetSummaryRequest(item, out var request) || request is null)
                     continue;
 
                 try
                 {
                     var summary = await _generator.GenerateAsync(request.ExistingSummary, request.PendingMessages, stoppingToken);
-                    _history.ApplySummarySuccess(item.UserKey, summary);
-                    _logger.LogInformation(
-                        "Conversation summary completed. UserKeyFingerprint={UserKeyFingerprint} PendingCount={PendingCount} MessageCount={MessageCount}",
-                        item.UserKeyFingerprint,
-                        item.PendingCount,
-                        item.MessageCount);
+                    if (_history.ApplySummarySuccess(request, summary))
+                    {
+                        _logger.LogInformation(
+                            "Conversation summary completed. UserKeyFingerprint={UserKeyFingerprint} PendingCount={PendingCount} MessageCount={MessageCount}",
+                            item.UserKeyFingerprint,
+                            item.PendingCount,
+                            item.MessageCount);
+                    }
+                    else
+                    {
+                        _logger.LogDebug(
+                            "Discarded stale conversation summary. UserKeyFingerprint={UserKeyFingerprint} PendingCount={PendingCount}",
+                            item.UserKeyFingerprint,
+                            item.PendingCount);
+                    }
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                 {
-                    _history.ApplySummaryFailure(item.UserKey);
+                    _history.ApplySummaryFailure(request);
                     break;
                 }
                 catch (Exception ex)
                 {
-                    _history.ApplySummaryFailure(item.UserKey);
+                    _history.ApplySummaryFailure(request);
                     var statusCode = SensitiveLogHelpers.GetStatusCode(ex);
                     _logger.LogError(
                         "Conversation summary failed. UserKeyFingerprint={UserKeyFingerprint} PendingCount={PendingCount} MessageCount={MessageCount} StatusCode={StatusCode} ExceptionType={ExceptionType}",

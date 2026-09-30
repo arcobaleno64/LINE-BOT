@@ -10,9 +10,11 @@ public class ConversationHistoryService
 
     private sealed class Session
     {
+        public Guid Id { get; } = Guid.NewGuid();
         public List<ChatMessage> Messages { get; } = [];
         public DateTime LastAccess { get; set; } = DateTime.UtcNow;
         public bool IsSummarizing { get; set; }
+        public Guid? ActiveSummaryId { get; set; }
         public string? SessionSummary { get; set; }
         public IReadOnlyList<ChatMessage>? PendingSummaryMessages { get; set; }
     }
@@ -82,11 +84,15 @@ public class ConversationHistoryService
             if (session.Messages.Count > maxMessages && !session.IsSummarizing && _summaryQueue is not null)
             {
                 var pendingMessages = session.Messages.ToArray();
+                var summaryId = Guid.NewGuid();
                 session.PendingSummaryMessages = pendingMessages;
                 session.IsSummarizing = true;
+                session.ActiveSummaryId = summaryId;
 
                 var workItem = new ConversationSummaryWorkItem(
                     userKey,
+                    session.Id,
+                    summaryId,
                     ObservabilityKeyFingerprint.From(userKey),
                     DateTime.UtcNow,
                     pendingMessages.Length,
@@ -96,6 +102,7 @@ public class ConversationHistoryService
                 {
                     session.PendingSummaryMessages = null;
                     session.IsSummarizing = false;
+                    session.ActiveSummaryId = null;
                     _logger?.LogWarning(
                         "Failed to enqueue conversation summary work. UserKeyFingerprint={UserKeyFingerprint} PendingCount={PendingCount} MessageCount={MessageCount}",
                         workItem.UserKeyFingerprint,
@@ -116,13 +123,15 @@ public class ConversationHistoryService
         lock (_lock) { _sessions.Remove(userKey); }
     }
 
-    internal bool TryGetSummaryRequest(string userKey, out ConversationSummaryRequest? request)
+    internal bool TryGetSummaryRequest(ConversationSummaryWorkItem workItem, out ConversationSummaryRequest? request)
     {
         lock (_lock)
         {
             Prune();
-            if (!_sessions.TryGetValue(userKey, out var session)
+            if (!_sessions.TryGetValue(workItem.UserKey, out var session)
+                || session.Id != workItem.SessionId
                 || !session.IsSummarizing
+                || session.ActiveSummaryId != workItem.SummaryId
                 || session.PendingSummaryMessages is not { Count: > 0 } pendingMessages)
             {
                 request = null;
@@ -130,40 +139,60 @@ public class ConversationHistoryService
             }
 
             request = new ConversationSummaryRequest(
-                userKey,
+                workItem.UserKey,
+                workItem.SessionId,
+                workItem.SummaryId,
                 session.SessionSummary,
                 pendingMessages.ToArray());
             return true;
         }
     }
 
-    internal void ApplySummarySuccess(string userKey, string summary)
+    internal bool ApplySummarySuccess(ConversationSummaryRequest request, string summary)
     {
         lock (_lock)
         {
-            if (!_sessions.TryGetValue(userKey, out var session))
-                return;
+            if (!IsActiveRequestUnsafe(request, out var session))
+                return false;
 
             session.SessionSummary = summary;
             session.PendingSummaryMessages = null;
             session.IsSummarizing = false;
+            session.ActiveSummaryId = null;
             session.LastAccess = DateTime.UtcNow;
             TrimToLimitUnsafe(session, _postSummaryRetainedMessages);
+            return true;
         }
     }
 
-    internal void ApplySummaryFailure(string userKey)
+    internal bool ApplySummaryFailure(ConversationSummaryRequest request)
     {
         lock (_lock)
         {
-            if (!_sessions.TryGetValue(userKey, out var session))
-                return;
+            if (!IsActiveRequestUnsafe(request, out var session))
+                return false;
 
             session.PendingSummaryMessages = null;
             session.IsSummarizing = false;
+            session.ActiveSummaryId = null;
             session.LastAccess = DateTime.UtcNow;
             TrimToLimitUnsafe(session, _maxRounds * 2);
+            return true;
         }
+    }
+
+    private bool IsActiveRequestUnsafe(ConversationSummaryRequest request, out Session session)
+    {
+        if (_sessions.TryGetValue(request.UserKey, out session!)
+            && session.Id == request.SessionId
+            && session.IsSummarizing
+            && session.ActiveSummaryId == request.SummaryId)
+        {
+            return true;
+        }
+
+        session = null!;
+        return false;
     }
 
     internal ConversationSessionSnapshot? GetSessionSnapshot(string userKey)
@@ -209,6 +238,8 @@ public class ConversationHistoryService
 
 internal sealed record ConversationSummaryRequest(
     string UserKey,
+    Guid SessionId,
+    Guid SummaryId,
     string? ExistingSummary,
     IReadOnlyList<ConversationHistoryService.ChatMessage> PendingMessages);
 

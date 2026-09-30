@@ -91,6 +91,43 @@ public class LineContentServiceTests
         Assert.Contains("A1 值", result, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData("xl/sharedStrings.xml")]
+    [InlineData("xl/workbook.xml")]
+    [InlineData("xl/worksheets/sheet1.xml")]
+    public void ExtractTextFromXlsx_MissingRequiredRoot_RejectsDocumentSafely(string partName)
+    {
+        var xlsxBytes = ReplaceZipEntry(BuildMinimalXlsx("工作表資料", "A1 值"), partName, "<broken/>");
+
+        var ex = Assert.Throws<NotSupportedException>(() => LineContentService.ExtractTextFromXlsx(xlsxBytes));
+
+        Assert.Contains("Excel", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ExtractTextFromFile_Pptx_ExtractsSlideText()
+    {
+        var service = new LineContentService(new HttpClient(), TestFactory.BuildConfig());
+        var pptxBytes = BuildMinimalPptx("投影片文字抽取測試");
+
+        var result = service.ExtractTextFromFile(
+            pptxBytes,
+            "slides.pptx",
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation");
+
+        Assert.Contains("投影片文字抽取測試", result, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ExtractTextFromPptx_MissingSlideRoot_RejectsDocumentSafely()
+    {
+        var pptxBytes = ReplaceZipEntry(BuildMinimalPptx("投影片文字"), "ppt/slides/slide1.xml", "<broken/>");
+
+        var ex = Assert.Throws<NotSupportedException>(() => LineContentService.ExtractTextFromPptx(pptxBytes));
+
+        Assert.Contains("PowerPoint", ex.Message, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void ExtractTextFromFile_UnsupportedExtension_Throws()
     {
@@ -231,6 +268,94 @@ public class LineContentServiceTests
 """);
         }
         return ms.ToArray();
+    }
+
+    /// <summary>Minimal valid .pptx with one slide and one text shape.</summary>
+    private static byte[] BuildMinimalPptx(string slideText)
+    {
+        using var ms = new MemoryStream();
+        using (var zip = new ZipArchive(ms, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            AddEntry(zip, "[Content_Types].xml", """
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>
+  <Override PartName="/ppt/slides/slide1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>
+</Types>
+""");
+
+            AddEntry(zip, "_rels/.rels", """
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="ppt/presentation.xml"/>
+</Relationships>
+""");
+
+            AddEntry(zip, "ppt/_rels/presentation.xml.rels", """
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide1.xml"/>
+</Relationships>
+""");
+
+            AddEntry(zip, "ppt/presentation.xml", """
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<p:presentation xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"
+                xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+                xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
+  <p:sldIdLst><p:sldId id="256" r:id="rId1"/></p:sldIdLst>
+</p:presentation>
+""");
+
+            AddEntry(zip, "ppt/slides/slide1.xml", $"""
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"
+       xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+       xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
+  <p:cSld>
+    <p:spTree>
+      <p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>
+      <p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>
+      <p:sp>
+        <p:nvSpPr><p:cNvPr id="2" name="Text Box 1"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr>
+        <p:spPr/>
+        <p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:rPr lang="zh-TW"/><a:t>{System.Security.SecurityElement.Escape(slideText)}</a:t></a:r></a:p></p:txBody>
+      </p:sp>
+    </p:spTree>
+  </p:cSld>
+</p:sld>
+""");
+        }
+        return ms.ToArray();
+    }
+
+    private static byte[] ReplaceZipEntry(byte[] archiveBytes, string entryName, string replacementContent)
+    {
+        using var input = new MemoryStream(archiveBytes);
+        using var output = new MemoryStream();
+        using (var source = new ZipArchive(input, ZipArchiveMode.Read, leaveOpen: true))
+        using (var target = new ZipArchive(output, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            foreach (var sourceEntry in source.Entries)
+            {
+                var targetEntry = target.CreateEntry(sourceEntry.FullName);
+                using var targetStream = targetEntry.Open();
+                if (string.Equals(sourceEntry.FullName, entryName, StringComparison.Ordinal))
+                {
+                    using var writer = new StreamWriter(targetStream, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+                    writer.Write(replacementContent);
+                }
+                else
+                {
+                    using var sourceStream = sourceEntry.Open();
+                    sourceStream.CopyTo(targetStream);
+                }
+            }
+        }
+
+        return output.ToArray();
     }
 
     private static void AddEntry(ZipArchive zip, string path, string content)

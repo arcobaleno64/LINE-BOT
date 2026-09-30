@@ -216,8 +216,12 @@ public class LineContentService
             // 建立 SharedStrings 查詢表；同步累計字元數，超限即拒絕，避免大量字串先吞掉記憶體。
             var sharedStrings = new Dictionary<int, string>();
             var sharedStringsChars = 0L;
-            var sharedItems = workbookPart.SharedStringTablePart?.SharedStringTable
-                .Elements<SharedStringItem>();
+            var sharedStringTablePart = workbookPart.SharedStringTablePart;
+            var sharedStringTable = sharedStringTablePart?.SharedStringTable;
+            if (sharedStringTablePart is not null && sharedStringTable is null)
+                throw new NotSupportedException("Excel 文件格式不支援或已損毀，無法解析。");
+
+            var sharedItems = sharedStringTable?.Elements<SharedStringItem>();
             if (sharedItems is not null)
             {
                 var idx = 0;
@@ -233,15 +237,23 @@ public class LineContentService
 
             var sb = new StringBuilder();
             var sheetIndex = 0;
+            var workbook = workbookPart.Workbook;
+            if (workbook is null)
+                throw new NotSupportedException("Excel 文件格式不支援或已損毀，無法解析。");
+
             foreach (var worksheetPart in workbookPart.WorksheetParts)
             {
                 sheetIndex++;
-                var sheet = workbookPart.Workbook.Descendants<Sheet>()
+                var sheet = workbook.Descendants<Sheet>()
                     .ElementAtOrDefault(sheetIndex - 1);
                 var sheetName = sheet?.Name?.Value ?? $"工作表{sheetIndex}";
                 sb.AppendLine($"[{sheetName}]");
 
-                var sheetData = worksheetPart.Worksheet.GetFirstChild<SheetData>();
+                var worksheet = worksheetPart.Worksheet;
+                if (worksheet is null)
+                    throw new NotSupportedException("Excel 文件格式不支援或已損毀，無法解析。");
+
+                var sheetData = worksheet.GetFirstChild<SheetData>();
                 if (sheetData is null)
                     continue;
 
@@ -306,7 +318,11 @@ public class LineContentService
             {
                 slideIndex++;
                 sb.AppendLine($"[第 {slideIndex} 頁]");
-                var texts = slidePart.Slide.Descendants<DocumentFormat.OpenXml.Drawing.Text>()
+                var slide = slidePart.Slide;
+                if (slide is null)
+                    throw new NotSupportedException("PowerPoint 文件格式不支援或已損毀，無法解析。");
+
+                var texts = slide.Descendants<DocumentFormat.OpenXml.Drawing.Text>()
                     .Select(t => t.Text?.Trim())
                     .Where(t => !string.IsNullOrWhiteSpace(t));
                 foreach (var t in texts)

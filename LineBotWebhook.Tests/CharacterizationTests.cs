@@ -158,6 +158,98 @@ public class CharacterizationTests
     }
 
     [Fact]
+    public async Task DirectTextSearch_UsesSearchEvidence_ForAiAndLineReply()
+    {
+        const string query = "請幫我搜尋最新測試資訊";
+        const string searchEndpoint = "https://search.unit/search";
+        string? searchBody = null;
+        string? aiPrompt = null;
+        string? lineReplyBody = null;
+        var config = TestFactory.BuildConfig(new Dictionary<string, string?>
+        {
+            ["WebSearch:Enabled"] = "true",
+            ["WebSearch:TavilyApiKey"] = "test-search-key",
+            ["WebSearch:Endpoint"] = searchEndpoint
+        });
+        var handler = new RecordingHttpMessageHandler(async (request, ct) =>
+        {
+            if (request.RequestUri?.ToString() == searchEndpoint)
+            {
+                searchBody = await request.Content!.ReadAsStringAsync(ct);
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(
+                        "{\"results\":[{\"title\":\"SOURCE_TITLE_TOKEN\",\"url\":\"https://source.test/page\",\"content\":\"SEARCH_SNIPPET_TOKEN\"}]}")
+                };
+            }
+
+            if (request.RequestUri?.ToString() == "https://api.line.me/v2/bot/message/reply")
+                lineReplyBody = await request.Content!.ReadAsStringAsync(ct);
+
+            return new HttpResponseMessage(HttpStatusCode.OK);
+        });
+        var ai = new FakeAiService
+        {
+            OnTextAsync = (prompt, _, _, _) =>
+            {
+                aiPrompt = prompt;
+                return Task.FromResult("GROUNDED-ANSWER-TOKEN");
+            }
+        };
+        var textHandler = TestFactory.CreateTextHandler(config, ai, handler);
+
+        var handled = await textHandler.HandleAsync(
+            BuildTextEvent("user", query), "https://unit.test", CancellationToken.None);
+
+        Assert.True(handled);
+        Assert.Equal(1, ai.TextCalls);
+        Assert.NotNull(searchBody);
+        using (var search = System.Text.Json.JsonDocument.Parse(searchBody!))
+            Assert.Equal(query, search.RootElement.GetProperty("query").GetString());
+        Assert.Contains("SEARCH_SNIPPET_TOKEN", aiPrompt, StringComparison.Ordinal);
+        Assert.NotNull(lineReplyBody);
+        using var lineReply = System.Text.Json.JsonDocument.Parse(lineReplyBody!);
+        var flexMessage = lineReply.RootElement.GetProperty("messages")[0];
+        Assert.Equal("flex", flexMessage.GetProperty("type").GetString());
+        Assert.Equal("GROUNDED-ANSWER-TOKEN", flexMessage.GetProperty("altText").GetString());
+        var bubble = flexMessage.GetProperty("contents");
+        Assert.Equal(
+            "GROUNDED-ANSWER-TOKEN",
+            bubble.GetProperty("body").GetProperty("contents")[0].GetProperty("text").GetString());
+        Assert.Equal(
+            "SOURCE_TITLE_TOKEN",
+            bubble.GetProperty("footer").GetProperty("contents")[0]
+                .GetProperty("action").GetProperty("label").GetString());
+        Assert.Equal(
+            "https://source.test/page",
+            bubble.GetProperty("footer").GetProperty("contents")[0]
+                .GetProperty("action").GetProperty("uri").GetString());
+    }
+
+    [Fact]
+    public async Task DirectTextSearch_WithoutApiKey_DoesNotCallSearchOrAi()
+    {
+        var config = TestFactory.BuildConfig(new Dictionary<string, string?>
+        {
+            ["WebSearch:Enabled"] = "true",
+            ["WebSearch:TavilyApiKey"] = "",
+            ["WebSearch:Endpoint"] = "https://search.unit/search"
+        });
+        var handler = new RecordingHttpMessageHandler(
+            (request, ct) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)));
+        var ai = new FakeAiService();
+        var textHandler = TestFactory.CreateTextHandler(config, ai, handler);
+
+        var handled = await textHandler.HandleAsync(
+            BuildTextEvent("user", "請搜尋測試資訊"), "https://unit.test", CancellationToken.None);
+
+        Assert.True(handled);
+        Assert.Equal(0, ai.TextCalls);
+        Assert.DoesNotContain(handler.Requests, request => request.RequestUri?.Host == "search.unit");
+        Assert.Contains("尚未設定 API Key", TestFactory.GetLastReplyText(handler), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task TextMessageHandler_AiReplyWithQuickReplyMetadata_DoesNotLeakMetadataToUser()
     {
         var config = TestFactory.BuildConfig();
