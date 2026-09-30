@@ -16,6 +16,7 @@ public class TextMessageHandler : ITextMessageHandler
     private readonly Ai429BackoffService _aiBackoff;
     private readonly IDateTimeIntentResponder _dateTimeIntentResponder;
     private readonly AdvisoryContextStore _advisoryStore;
+    private readonly GroupRegistrationStore? _groupRegistrationStore;
     private readonly IWebhookMetrics _metrics;
     private readonly ILogger<TextMessageHandler> _logger;
     private readonly int _flexBodyMaxLength;
@@ -32,7 +33,8 @@ public class TextMessageHandler : ITextMessageHandler
         IDateTimeIntentResponder dateTimeIntentResponder,
         AdvisoryContextStore advisoryStore,
         IWebhookMetrics metrics,
-        ILogger<TextMessageHandler> logger)
+        ILogger<TextMessageHandler> logger,
+        GroupRegistrationStore? groupRegistrationStore = null)
     {
         _config = config;
         _ai = ai;
@@ -44,6 +46,7 @@ public class TextMessageHandler : ITextMessageHandler
         _aiBackoff = aiBackoff;
         _dateTimeIntentResponder = dateTimeIntentResponder;
         _advisoryStore = advisoryStore;
+        _groupRegistrationStore = groupRegistrationStore;
         _metrics = metrics;
         _logger = logger;
         _flexBodyMaxLength = MessageHandlerHelpers.GetIntConfig(config, "App:FlexBodyMaxLength", 2000);
@@ -60,6 +63,45 @@ public class TextMessageHandler : ITextMessageHandler
         var userKey = MessageHandlerHelpers.BuildUserKey(evt);
         var logContext = WebhookLogContext.FromEvent(evt, HandlerType, userKey);
         var userText = MentionGateService.StripMention(evt.Message);
+        if (evt.Source?.Type == "group" &&
+            (userText == "啟用推播" || userText == "停用推播"))
+        {
+            if (string.IsNullOrWhiteSpace(evt.Source.GroupId) || _groupRegistrationStore is null)
+            {
+                _logger.LogError(
+                    "Unable to update group push setting. EventId={EventId} StoreAvailable={StoreAvailable}",
+                    logContext.EventId,
+                    _groupRegistrationStore is not null);
+                await _reply.ReplyTextAsync(
+                    evt.ReplyToken!,
+                    "目前無法更新群組推播設定，請稍後再試。",
+                    logContext,
+                    ct);
+                return true;
+            }
+
+            var enabled = userText == "啟用推播";
+            var updated = await _groupRegistrationStore.SetPushEnabledAsync(
+                evt.Source.GroupId,
+                enabled,
+                ct);
+            string response;
+            if (!updated)
+            {
+                response = "此群組尚未登錄，無法變更推播設定。";
+            }
+            else if (enabled)
+            {
+                var botName = _config["App:BotDisplayName"] ?? "Bot";
+                response = $"已啟用本群組推播通知。輸入「@{botName} 停用推播」即可取消。";
+            }
+            else
+            {
+                response = "已停用本群組推播通知。";
+            }
+            await _reply.ReplyTextAsync(evt.ReplyToken!, response, logContext, ct);
+            return true;
+        }
         if (string.IsNullOrWhiteSpace(userText))
         {
             await _reply.ReplyTextAsync(evt.ReplyToken!, "請問有什麼我能幫忙的嗎？", logContext, ct);

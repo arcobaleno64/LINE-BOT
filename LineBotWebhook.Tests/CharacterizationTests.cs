@@ -114,6 +114,106 @@ public class CharacterizationTests
     }
 
     [Theory]
+    [InlineData("啟用推播", true)]
+    [InlineData("停用推播", false)]
+    public async Task GroupPushCommand_ActiveGroup_UpdatesPreferenceWithoutAi(string command, bool enabled)
+    {
+        var config = TestFactory.BuildConfig();
+        var ai = new FakeAiService();
+        var http = new RecordingHttpMessageHandler((request, ct) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)));
+        using var store = new GroupRegistrationStore(":memory:", NullLogger<GroupRegistrationStore>.Instance);
+        await store.UpsertJoinAsync("g1", 1000, "join-1");
+        if (!enabled)
+            await store.SetPushEnabledAsync("g1", true);
+
+        var handler = TestFactory.CreateTextHandler(config, ai, http, groupRegistrationStore: store);
+        var evt = BuildTextEvent("group", $"@bot {command}", mentioned: true);
+        var handled = await handler.HandleAsync(evt, "https://unit.test", CancellationToken.None);
+
+        Assert.True(handled);
+        var registration = await store.GetAsync("g1");
+        Assert.NotNull(registration);
+        Assert.Equal(enabled, registration!.PushEnabled);
+        Assert.Equal(0, ai.TextCalls);
+        var replyText = TestFactory.GetLastReplyText(http);
+        Assert.Contains(enabled ? "已啟用" : "已停用", replyText);
+        if (enabled)
+            Assert.Contains("停用推播", replyText);
+    }
+
+    [Fact]
+    public async Task GroupPushCommand_UnknownGroupRepliesWithoutAi()
+    {
+        var config = TestFactory.BuildConfig();
+        var ai = new FakeAiService();
+        var http = new RecordingHttpMessageHandler((request, ct) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)));
+        using var store = new GroupRegistrationStore(":memory:", NullLogger<GroupRegistrationStore>.Instance);
+        var handler = TestFactory.CreateTextHandler(config, ai, http, groupRegistrationStore: store);
+        var evt = BuildTextEvent("group", "@bot 啟用推播", mentioned: true);
+
+        await handler.HandleAsync(evt, "https://unit.test", CancellationToken.None);
+
+        Assert.Null(await store.GetAsync("g1"));
+        Assert.Equal(0, ai.TextCalls);
+        Assert.Contains("尚未登錄", TestFactory.GetLastReplyText(http));
+    }
+
+    [Fact]
+    public async Task GroupPushCommand_WithoutMentionIsIgnored()
+    {
+        var config = TestFactory.BuildConfig();
+        var ai = new FakeAiService();
+        var http = new RecordingHttpMessageHandler((request, ct) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)));
+        using var store = new GroupRegistrationStore(":memory:", NullLogger<GroupRegistrationStore>.Instance);
+        await store.UpsertJoinAsync("g1", 1000, "join-1");
+        var handler = TestFactory.CreateTextHandler(config, ai, http, groupRegistrationStore: store);
+        var evt = BuildTextEvent("group", "啟用推播", mentioned: false);
+
+        await handler.HandleAsync(evt, "https://unit.test", CancellationToken.None);
+
+        Assert.False((await store.GetAsync("g1"))!.PushEnabled);
+        Assert.Equal(0, ai.TextCalls);
+        Assert.Empty(http.Requests);
+    }
+
+    [Theory]
+    [InlineData("user", false)]
+    [InlineData("room", true)]
+    public async Task GroupPushCommand_NonGroupSourceKeepsExistingTextPath(string sourceType, bool mentioned)
+    {
+        var config = TestFactory.BuildConfig();
+        var ai = new FakeAiService();
+        var http = new RecordingHttpMessageHandler((request, ct) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)));
+        using var store = new GroupRegistrationStore(":memory:", NullLogger<GroupRegistrationStore>.Instance);
+        await store.UpsertJoinAsync("g1", 1000, "join-1");
+        var handler = TestFactory.CreateTextHandler(config, ai, http, groupRegistrationStore: store);
+        var text = sourceType == "room" ? "@bot 啟用推播" : "啟用推播";
+        var evt = BuildTextEvent(sourceType, text, mentioned);
+
+        await handler.HandleAsync(evt, "https://unit.test", CancellationToken.None);
+
+        Assert.False((await store.GetAsync("g1"))!.PushEnabled);
+        Assert.Equal(1, ai.TextCalls);
+    }
+
+    [Fact]
+    public async Task GroupPushCommand_OnlyMatchesExactCommand()
+    {
+        var config = TestFactory.BuildConfig();
+        var ai = new FakeAiService();
+        var http = new RecordingHttpMessageHandler((request, ct) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)));
+        using var store = new GroupRegistrationStore(":memory:", NullLogger<GroupRegistrationStore>.Instance);
+        await store.UpsertJoinAsync("g1", 1000, "join-1");
+        var handler = TestFactory.CreateTextHandler(config, ai, http, groupRegistrationStore: store);
+        var evt = BuildTextEvent("group", "@bot 啟用推播請說明", mentioned: true);
+
+        await handler.HandleAsync(evt, "https://unit.test", CancellationToken.None);
+
+        Assert.False((await store.GetAsync("g1"))!.PushEnabled);
+        Assert.Equal(1, ai.TextCalls);
+    }
+
+    [Theory]
     [InlineData("group")]
     [InlineData("room")]
     public async Task GroupTextWithoutMention_IsIgnored(string sourceType)

@@ -421,7 +421,8 @@ internal static class TestFactory
         AiResponseCacheService? cache = null,
         InFlightRequestMergeService? merge = null,
         ILogger<TextMessageHandler>? logger = null,
-        ILogger<LineReplyService>? replyLogger = null)
+        ILogger<LineReplyService>? replyLogger = null,
+        GroupRegistrationStore? groupRegistrationStore = null)
     {
         var actualMetrics = metrics ?? new FakeWebhookMetrics();
         var httpClient = new HttpClient(httpHandler);
@@ -441,7 +442,8 @@ internal static class TestFactory
             responder,
             new AdvisoryContextStore(),
             actualMetrics,
-            logger ?? NullLogger<TextMessageHandler>.Instance);
+            logger ?? NullLogger<TextMessageHandler>.Instance,
+            groupRegistrationStore);
     }
 
     public static ImageMessageHandler CreateImageHandler(
