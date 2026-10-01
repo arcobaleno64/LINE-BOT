@@ -48,6 +48,15 @@ public class HeadEndpointCompatibilityTests : IClassFixture<HeadEndpointCompatib
     }
 
     [Fact]
+    public async Task GetVersion_ReturnsConfiguredBuildCommit()
+    {
+        using var response = await _client.GetAsync("/version");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("test-build-commit", await response.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
     public async Task HeadRoot_Returns200()
     {
         using var response = await _client.SendAsync(new HttpRequestMessage(HttpMethod.Head, "/"));
@@ -74,7 +83,8 @@ public class HeadEndpointCompatibilityTests : IClassFixture<HeadEndpointCompatib
                 {
                     ["Line:ChannelAccessToken"] = "test-token",
                     ["Line:ChannelSecret"] = "test-secret",
-                    ["Ai:OpenAI:ApiKey"] = "test-openai-key"
+                    ["Ai:OpenAI:ApiKey"] = "test-openai-key",
+                    ["App:BuildCommit"] = "test-build-commit"
                 });
             });
         }

@@ -51,6 +51,8 @@ jobs:
           tags: ghcr.io/arcobaleno64/line-bot:latest
           pull: true
           no-cache: true
+          build-args: |
+            BUILD_COMMIT_SHA=${{ github.sha }}
 
       - name: Trigger Render Deploy
         env:
@@ -65,9 +67,10 @@ jobs:
       - name: Verify deployment
         env:
           RENDER_SERVICE_HOST: ${{ secrets.RENDER_SERVICE_HOST }}
+          EXPECTED_COMMIT: ${{ github.sha }}
         run: |
           if [ -n "$RENDER_SERVICE_HOST" ]; then
-            bash scripts/verify-deployment.sh "$RENDER_SERVICE_HOST"
+            bash scripts/verify-deployment.sh "$RENDER_SERVICE_HOST" "$EXPECTED_COMMIT"
           else
             echo "RENDER_SERVICE_HOST not set, skipping deployment verification"
           fi

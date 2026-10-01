@@ -204,6 +204,8 @@ app.MapGet("/", () => Results.Ok("LINE Bot Webhook is running"));
 app.MapMethods("/", ["HEAD"], () => Results.Ok());
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 app.MapMethods("/health", ["HEAD"], () => Results.Ok());
+var buildCommit = app.Configuration["App:BuildCommit"] ?? "unknown";
+app.MapGet("/version", () => Results.Text(buildCommit, "text/plain"));
 app.MapGet("/ready", (IWebhookReadinessService readiness) =>
 {
     var snapshot = readiness.GetSnapshot();

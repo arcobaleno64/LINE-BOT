@@ -11,6 +11,8 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
     dotnet publish "LineBotWebhook.csproj" -c Release -o /app/publish --no-restore /p:UseAppHost=false
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
+ARG BUILD_COMMIT_SHA=unknown
+ENV App__BuildCommit=${BUILD_COMMIT_SHA}
 WORKDIR /app
 
 # 建立非 root 用戶以提高安全性

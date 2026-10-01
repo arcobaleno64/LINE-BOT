@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Render deployment verification now supports either a host name or a full `https://` URL via `RENDER_SERVICE_HOST`
+- Deployment verification now confirms the running container's Git commit before checking the webhook signature gate
 
 ### Changed
 - GitHub Actions deployment verification is now configured against `https://line-bot-u85p.onrender.com`
