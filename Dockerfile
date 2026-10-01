@@ -18,13 +18,14 @@ WORKDIR /app
 # 建立非 root 用戶以提高安全性
 RUN groupadd --system appgroup && \
     useradd --system --create-home --gid appgroup appuser && \
-    mkdir -p /app/data && \
-    chown appuser:appgroup /app/data
+    mkdir -p /app/data /app/generated-files && \
+    chown appuser:appgroup /app/data /app/generated-files
 
 COPY --from=build --chown=appuser:appgroup /app/publish .
 
 # 切換至非 root 用戶
 USER appuser
+RUN test -w /app/generated-files
 
 EXPOSE 10000
 
