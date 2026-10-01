@@ -36,6 +36,15 @@ public sealed class AdvisoryContextStore
         return entry.Context;
     }
 
+    public void ClearForUser(string userKey)
+    {
+        foreach (var kvp in _entries)
+        {
+            if (string.Equals(kvp.Value.Context.UserKey, userKey, StringComparison.Ordinal))
+                _entries.TryRemove(kvp.Key, out _);
+        }
+    }
+
     private void PruneIfNeeded()
     {
         if (_entries.Count <= MaxEntries)

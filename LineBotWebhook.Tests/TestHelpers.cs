@@ -422,7 +422,9 @@ internal static class TestFactory
         InFlightRequestMergeService? merge = null,
         ILogger<TextMessageHandler>? logger = null,
         ILogger<LineReplyService>? replyLogger = null,
-        GroupRegistrationStore? groupRegistrationStore = null)
+        GroupRegistrationStore? groupRegistrationStore = null,
+        ConversationHistoryService? history = null,
+        AdvisoryContextStore? advisoryStore = null)
     {
         var actualMetrics = metrics ?? new FakeWebhookMetrics();
         var httpClient = new HttpClient(httpHandler);
@@ -440,7 +442,8 @@ internal static class TestFactory
             throttle ?? new UserRequestThrottleService(),
             backoff ?? new Ai429BackoffService(),
             responder,
-            new AdvisoryContextStore(),
+            history ?? new ConversationHistoryService(),
+            advisoryStore ?? new AdvisoryContextStore(),
             actualMetrics,
             logger ?? NullLogger<TextMessageHandler>.Instance,
             groupRegistrationStore);

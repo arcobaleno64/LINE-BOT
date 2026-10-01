@@ -40,6 +40,20 @@ public class AiResponseCacheService
         }
     }
 
+    public void ClearForUser(string userKey)
+    {
+        var prefix = $"{userKey}:";
+        lock (_lock)
+        {
+            foreach (var key in _cache.Keys
+                .Where(key => key.StartsWith(prefix, StringComparison.Ordinal))
+                .ToList())
+            {
+                _cache.Remove(key);
+            }
+        }
+    }
+
     private void PruneExpiredUnsafe()
     {
         var now = DateTime.UtcNow;

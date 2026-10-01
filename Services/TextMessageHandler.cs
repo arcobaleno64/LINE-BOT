@@ -12,6 +12,7 @@ public class TextMessageHandler : ITextMessageHandler
         • 文件摘要與依文件內容回答問題（txt、md、csv、json、xml、log、文字型 PDF、docx、xlsx、pptx）。
         • 若已啟用網路搜尋，可查詢最新資訊。
         • 回覆中的延伸按鈕可要求範例、改進方向或搜尋來源。
+        • 輸入「忘記對話」可清除你自己的暫存對話脈絡（群組需先提及 Bot）。
 
         群組／聊天室：請用 LINE「提及」功能標記我再提問；群組圖片目前不處理，群組檔案依管理設定處理。
         """;
@@ -25,6 +26,7 @@ public class TextMessageHandler : ITextMessageHandler
     private readonly UserRequestThrottleService _throttle;
     private readonly Ai429BackoffService _aiBackoff;
     private readonly IDateTimeIntentResponder _dateTimeIntentResponder;
+    private readonly ConversationHistoryService _history;
     private readonly AdvisoryContextStore _advisoryStore;
     private readonly GroupRegistrationStore? _groupRegistrationStore;
     private readonly IWebhookMetrics _metrics;
@@ -41,6 +43,7 @@ public class TextMessageHandler : ITextMessageHandler
         UserRequestThrottleService throttle,
         Ai429BackoffService aiBackoff,
         IDateTimeIntentResponder dateTimeIntentResponder,
+        ConversationHistoryService history,
         AdvisoryContextStore advisoryStore,
         IWebhookMetrics metrics,
         ILogger<TextMessageHandler> logger,
@@ -55,6 +58,7 @@ public class TextMessageHandler : ITextMessageHandler
         _throttle = throttle;
         _aiBackoff = aiBackoff;
         _dateTimeIntentResponder = dateTimeIntentResponder;
+        _history = history;
         _advisoryStore = advisoryStore;
         _groupRegistrationStore = groupRegistrationStore;
         _metrics = metrics;
@@ -110,6 +114,17 @@ public class TextMessageHandler : ITextMessageHandler
                 response = "已停用本群組推播通知。";
             }
             await _reply.ReplyTextAsync(evt.ReplyToken!, response, logContext, ct);
+            return true;
+        }
+        if (userText.Trim().Equals("忘記對話", StringComparison.Ordinal))
+        {
+            _history.Clear(userKey);
+            _aiCache.ClearForUser(userKey);
+            _advisoryStore.ClearForUser(userKey);
+            var confirmation = evt.Source?.Type is "group" or "room"
+                ? "已清除你在此對話中的暫存脈絡；其他成員不受影響。"
+                : "已清除你在此對話中的暫存脈絡。";
+            await _reply.ReplyTextAsync(evt.ReplyToken!, confirmation, logContext, ct);
             return true;
         }
         if (string.IsNullOrWhiteSpace(userText))
