@@ -5,6 +5,16 @@ namespace LineBotWebhook.Services;
 public class TextMessageHandler : ITextMessageHandler
 {
     private const string HandlerType = "text";
+    private const string HelpText = """
+        可用功能：
+        • 文字提問與追問。
+        • 1 對 1 圖片分析。
+        • 文件摘要與依文件內容回答問題（txt、md、csv、json、xml、log、文字型 PDF、docx、xlsx、pptx）。
+        • 若已啟用網路搜尋，可查詢最新資訊。
+        • 回覆中的延伸按鈕可要求範例、改進方向或搜尋來源。
+
+        群組／聊天室：請用 LINE「提及」功能標記我再提問；群組圖片目前不處理，群組檔案依管理設定處理。
+        """;
 
     private readonly IConfiguration _config;
     private readonly IAiService _ai;
@@ -129,6 +139,12 @@ public class TextMessageHandler : ITextMessageHandler
             return true;
         }
 
+        if (IsHelpCommand(userText))
+        {
+            await _reply.ReplyTextAsync(evt.ReplyToken!, HelpText, logContext, ct);
+            return true;
+        }
+
         var searchOutcome = await _webSearch.TrySearchAsync(userText, ct);
         if (searchOutcome.Triggered)
         {
@@ -197,6 +213,11 @@ public class TextMessageHandler : ITextMessageHandler
         await _reply.ReplyAiTextAsync(evt.ReplyToken!, parsedReply.MainText, parsedReply.Suggestions, logContext, ct);
         return true;
     }
+
+    private static bool IsHelpCommand(string text) =>
+        text.Equals("說明", StringComparison.Ordinal)
+        || text.Equals("/help", StringComparison.OrdinalIgnoreCase)
+        || text.Equals("help", StringComparison.OrdinalIgnoreCase);
 
     internal async Task<string> GetMergedTextReplyAsync(string userKey, string userText, CancellationToken ct, WebhookLogContext? logContext = null)
     {

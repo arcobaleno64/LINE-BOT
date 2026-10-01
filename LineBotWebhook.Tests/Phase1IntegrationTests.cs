@@ -9,6 +9,65 @@ namespace LineBotWebhook.Tests;
 
 public class Phase1IntegrationTests
 {
+    [Fact]
+    public async Task GroupHelpCommand_MentionedBot_ReturnsDeterministicHelpWithoutCallingAi()
+    {
+        var config = TestFactory.BuildConfig();
+        var ai = new FakeAiService();
+        var httpHandler = new RecordingHttpMessageHandler((_, _) =>
+            Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)));
+        var handler = TestFactory.CreateTextHandler(config, ai, httpHandler);
+        var evt = new LineEvent
+        {
+            Type = "message",
+            ReplyToken = "reply-help",
+            Source = new LineSource { Type = "group", GroupId = "G1", UserId = "U1" },
+            Message = new LineMessage
+            {
+                Id = "message-help",
+                Type = "text",
+                Text = "@Bot 說明",
+                Mention = new LineMention
+                {
+                    Mentionees = [new LineMentionee { Index = 0, Length = 4, IsSelf = true }]
+                }
+            }
+        };
+
+        var handled = await handler.HandleAsync(evt, "https://unit.test", CancellationToken.None);
+
+        Assert.True(handled);
+        Assert.Equal(0, ai.TextCalls);
+        var reply = TestFactory.GetLastReplyText(httpHandler);
+        Assert.NotNull(reply);
+        Assert.Contains("文字提問", reply, StringComparison.Ordinal);
+        Assert.Contains("群組／聊天室", reply, StringComparison.Ordinal);
+        Assert.DoesNotContain("啟用推播", reply, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task GroupHelpCommand_WithoutMention_IsIgnored()
+    {
+        var config = TestFactory.BuildConfig();
+        var ai = new FakeAiService();
+        var httpHandler = new RecordingHttpMessageHandler((_, _) =>
+            Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)));
+        var handler = TestFactory.CreateTextHandler(config, ai, httpHandler);
+        var evt = new LineEvent
+        {
+            Type = "message",
+            ReplyToken = "reply-help",
+            Source = new LineSource { Type = "group", GroupId = "G1", UserId = "U1" },
+            Message = new LineMessage { Id = "message-help", Type = "text", Text = "說明" }
+        };
+
+        var handled = await handler.HandleAsync(evt, "https://unit.test", CancellationToken.None);
+
+        Assert.True(handled);
+        Assert.Equal(0, ai.TextCalls);
+        Assert.Empty(httpHandler.Requests);
+    }
+
     // ── Loading Indicator ──
 
     [Fact]

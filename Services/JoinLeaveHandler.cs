@@ -51,8 +51,7 @@ public class JoinLeaveHandler : IJoinLeaveHandler
         {
             var botName = _config["App:BotDisplayName"] ?? "Bot";
             var welcome = $"大家好，我是 {botName}。\n" +
-                          $"若要啟用推播通知，請輸入「@{botName} 啟用推播」。\n" +
-                          $"輸入「@{botName} 說明」可查看所有指令。";
+                          "在群組或聊天室中，請使用 LINE「提及」功能標記我，再輸入「說明」查看可用功能。";
             try
             {
                 await _reply.ReplyTextAsync(evt.ReplyToken, welcome, ct);

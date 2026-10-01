@@ -355,6 +355,9 @@ public class JoinLeaveHandlerTests : IDisposable
         var replyText = TestFactory.GetLastReplyText(httpHandler);
         Assert.NotNull(replyText);
         Assert.Contains("TestBot", replyText);
+        Assert.Contains("提及", replyText, StringComparison.Ordinal);
+        Assert.Contains("說明", replyText, StringComparison.Ordinal);
+        Assert.DoesNotContain("啟用推播", replyText, StringComparison.Ordinal);
     }
 
     [Fact]
