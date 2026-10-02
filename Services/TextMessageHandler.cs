@@ -12,6 +12,7 @@ public class TextMessageHandler : ITextMessageHandler
         • 文件摘要與依文件內容回答問題（txt、md、csv、json、xml、log、文字型 PDF、docx、xlsx、pptx）。
         • 若已啟用網路搜尋，可查詢最新資訊。
         • 回覆中的延伸按鈕可要求範例、改進方向或搜尋來源。
+        • 輸入「管理員測試」可查詢自己是否列入 Bot 管理員名單。
         • 輸入「忘記對話」可清除你自己的暫存對話脈絡（群組需先提及 Bot）。
 
         群組／聊天室：請用 LINE「提及」功能標記我再提問；群組圖片目前不處理，群組檔案依管理設定處理。
@@ -160,6 +161,16 @@ public class TextMessageHandler : ITextMessageHandler
             return true;
         }
 
+        if (IsAdminTestCommand(userText))
+        {
+            var isAdmin = MessageHandlerHelpers.IsConfiguredGroupAdmin(_config, evt.Source?.UserId);
+            var status = isAdmin
+                ? "你已列入此 Bot 的管理員名單（系統白名單）。"
+                : "你目前未列入此 Bot 的管理員名單。";
+            await _reply.ReplyTextAsync(evt.ReplyToken!, status, logContext, ct);
+            return true;
+        }
+
         var searchOutcome = await _webSearch.TrySearchAsync(userText, ct);
         if (searchOutcome.Triggered)
         {
@@ -233,6 +244,9 @@ public class TextMessageHandler : ITextMessageHandler
         text.Equals("說明", StringComparison.Ordinal)
         || text.Equals("/help", StringComparison.OrdinalIgnoreCase)
         || text.Equals("help", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsAdminTestCommand(string text) =>
+        text.Equals("管理員測試", StringComparison.Ordinal);
 
     internal async Task<string> GetMergedTextReplyAsync(string userKey, string userText, CancellationToken ct, WebhookLogContext? logContext = null)
     {

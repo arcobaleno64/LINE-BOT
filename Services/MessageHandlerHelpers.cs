@@ -16,6 +16,20 @@ internal static class MessageHandlerHelpers
         return $"{sourceId}:{userId}";
     }
 
+    public static bool IsConfiguredGroupAdmin(IConfiguration config, string? userId)
+    {
+        if (string.IsNullOrWhiteSpace(userId))
+            return false;
+
+        var configuredIds = config["App:GroupAdminUserIds"];
+        if (string.IsNullOrWhiteSpace(configuredIds))
+            return false;
+
+        return configuredIds
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Contains(userId, StringComparer.Ordinal);
+    }
+
     public static bool TryThrottle(
         UserRequestThrottleService throttle,
         IConfiguration config,
