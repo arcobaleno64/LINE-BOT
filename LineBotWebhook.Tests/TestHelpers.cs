@@ -424,7 +424,8 @@ internal static class TestFactory
         ILogger<LineReplyService>? replyLogger = null,
         GroupRegistrationStore? groupRegistrationStore = null,
         ConversationHistoryService? history = null,
-        AdvisoryContextStore? advisoryStore = null)
+        AdvisoryContextStore? advisoryStore = null,
+        GroupReplyControlService? groupReplyControl = null)
     {
         var actualMetrics = metrics ?? new FakeWebhookMetrics();
         var httpClient = new HttpClient(httpHandler);
@@ -446,7 +447,8 @@ internal static class TestFactory
             advisoryStore ?? new AdvisoryContextStore(),
             actualMetrics,
             logger ?? NullLogger<TextMessageHandler>.Instance,
-            groupRegistrationStore);
+            groupRegistrationStore,
+            groupReplyControl);
     }
 
     public static ImageMessageHandler CreateImageHandler(
@@ -514,7 +516,8 @@ internal static class TestFactory
         bool imageHandled,
         bool fileHandled,
         ILogger<LineWebhookDispatcher>? logger = null,
-        ILogger<LineReplyService>? replyLogger = null)
+        ILogger<LineReplyService>? replyLogger = null,
+        GroupReplyControlService? groupReplyControl = null)
     {
         var actualMetrics = metrics ?? new FakeWebhookMetrics();
         var httpClient = new HttpClient(httpHandler);
@@ -531,7 +534,8 @@ internal static class TestFactory
             new NoopAdvisoryPostbackHandler(),
             new NoopJoinLeaveHandler(),
             actualMetrics,
-            logger ?? NullLogger<LineWebhookDispatcher>.Instance);
+            logger ?? NullLogger<LineWebhookDispatcher>.Instance,
+            groupReplyControl);
     }
 
     internal sealed class NoopJoinLeaveHandler : IJoinLeaveHandler

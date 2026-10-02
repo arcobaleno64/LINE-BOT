@@ -30,6 +30,7 @@ builder.Services.AddSingleton<IWebhookMetrics, WebhookMetrics>();
 builder.Services.AddSingleton<IWebhookBackgroundQueue, WebhookBackgroundQueue>();
 builder.Services.AddSingleton<IWebhookReadinessService, WebhookReadinessService>();
 builder.Services.AddSingleton<IWebhookEventDeduplicationService, WebhookEventDeduplicationService>();
+builder.Services.AddSingleton<GroupReplyControlService>();
 
 // ---------- DI: AI Service (主 provider + 自動 failover) ----------
 builder.Services.AddSingleton<IAiService>(sp =>

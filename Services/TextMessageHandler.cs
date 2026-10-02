@@ -14,8 +14,10 @@ public class TextMessageHandler : ITextMessageHandler
         • 回覆中的延伸按鈕可要求範例、改進方向或搜尋來源。
         • 輸入「管理員測試」可查詢自己是否列入 Bot 管理員名單。
         • 輸入「忘記對話」可清除你自己的暫存對話脈絡（群組需先提及 Bot）。
+        • Bot 管理員可在群組提及我輸入「暫停回覆 30 分鐘」或「恢復回覆」。
 
         群組／聊天室：請用 LINE「提及」功能標記我再提問；群組圖片目前不處理，群組檔案依管理設定處理。
+        暫停時一般提問與群組檔案不處理；「說明」、「管理員測試」、「忘記對話」及「恢復回覆」仍可使用。服務重啟會清除暫停狀態。
         """;
 
     private readonly IConfiguration _config;
@@ -28,6 +30,7 @@ public class TextMessageHandler : ITextMessageHandler
     private readonly Ai429BackoffService _aiBackoff;
     private readonly IDateTimeIntentResponder _dateTimeIntentResponder;
     private readonly ConversationHistoryService _history;
+    private readonly GroupReplyControlService _groupReplyControl;
     private readonly AdvisoryContextStore _advisoryStore;
     private readonly GroupRegistrationStore? _groupRegistrationStore;
     private readonly IWebhookMetrics _metrics;
@@ -48,7 +51,8 @@ public class TextMessageHandler : ITextMessageHandler
         AdvisoryContextStore advisoryStore,
         IWebhookMetrics metrics,
         ILogger<TextMessageHandler> logger,
-        GroupRegistrationStore? groupRegistrationStore = null)
+        GroupRegistrationStore? groupRegistrationStore = null,
+        GroupReplyControlService? groupReplyControl = null)
     {
         _config = config;
         _ai = ai;
@@ -60,6 +64,7 @@ public class TextMessageHandler : ITextMessageHandler
         _aiBackoff = aiBackoff;
         _dateTimeIntentResponder = dateTimeIntentResponder;
         _history = history;
+        _groupReplyControl = groupReplyControl ?? new GroupReplyControlService();
         _advisoryStore = advisoryStore;
         _groupRegistrationStore = groupRegistrationStore;
         _metrics = metrics;
@@ -117,6 +122,13 @@ public class TextMessageHandler : ITextMessageHandler
             await _reply.ReplyTextAsync(evt.ReplyToken!, response, logContext, ct);
             return true;
         }
+
+        if (IsPauseRepliesCommand(userText) || IsResumeRepliesCommand(userText))
+        {
+            await HandleGroupReplyControlCommandAsync(evt, userText, logContext, ct);
+            return true;
+        }
+
         if (userText.Trim().Equals("忘記對話", StringComparison.Ordinal))
         {
             _history.Clear(userKey);
@@ -128,6 +140,16 @@ public class TextMessageHandler : ITextMessageHandler
             await _reply.ReplyTextAsync(evt.ReplyToken!, confirmation, logContext, ct);
             return true;
         }
+
+        var groupScopeKey = GroupReplyControlService.GetScopeKey(evt);
+        if (groupScopeKey is not null
+            && _groupReplyControl.IsPaused(groupScopeKey)
+            && !IsHelpCommand(userText)
+            && !IsAdminTestCommand(userText))
+        {
+            return true;
+        }
+
         if (string.IsNullOrWhiteSpace(userText))
         {
             await _reply.ReplyTextAsync(evt.ReplyToken!, "請問有什麼我能幫忙的嗎？", logContext, ct);
@@ -247,6 +269,56 @@ public class TextMessageHandler : ITextMessageHandler
 
     private static bool IsAdminTestCommand(string text) =>
         text.Equals("管理員測試", StringComparison.Ordinal);
+
+    private static bool IsPauseRepliesCommand(string text) =>
+        text.Equals("暫停回覆 30 分鐘", StringComparison.Ordinal);
+
+    private static bool IsResumeRepliesCommand(string text) =>
+        text.Equals("恢復回覆", StringComparison.Ordinal);
+
+    private async Task HandleGroupReplyControlCommandAsync(
+        LineEvent evt,
+        string command,
+        WebhookLogContext logContext,
+        CancellationToken ct)
+    {
+        var scopeKey = GroupReplyControlService.GetScopeKey(evt);
+        if (scopeKey is null)
+        {
+            var message = evt.Source?.Type == "user"
+                ? "暫停與恢復回覆是群組指令，請在群組中提及 Bot 使用。"
+                : "無法確認群組或聊天室，未執行這項指令。";
+            await _reply.ReplyTextAsync(evt.ReplyToken!, message, logContext, ct);
+            return;
+        }
+
+        if (!MessageHandlerHelpers.IsConfiguredGroupAdmin(_config, evt.Source?.UserId))
+        {
+            await _reply.ReplyTextAsync(
+                evt.ReplyToken!,
+                "此群組管理指令僅限 Bot 管理員名單中的使用者。",
+                logContext,
+                ct);
+            return;
+        }
+
+        if (IsPauseRepliesCommand(command))
+        {
+            _groupReplyControl.PauseFor(scopeKey, TimeSpan.FromMinutes(30));
+            await _reply.ReplyTextAsync(
+                evt.ReplyToken!,
+                "已暫停此群組的一般回覆 30 分鐘；「說明」、「管理員測試」、「忘記對話」及「恢復回覆」仍可使用。",
+                logContext,
+                ct);
+            return;
+        }
+
+        var resumed = _groupReplyControl.Resume(scopeKey);
+        var confirmation = resumed
+            ? "已恢復此群組的 Bot 回覆。"
+            : "此群組目前沒有暫停，Bot 回覆維持啟用。";
+        await _reply.ReplyTextAsync(evt.ReplyToken!, confirmation, logContext, ct);
+    }
 
     internal async Task<string> GetMergedTextReplyAsync(string userKey, string userText, CancellationToken ct, WebhookLogContext? logContext = null)
     {

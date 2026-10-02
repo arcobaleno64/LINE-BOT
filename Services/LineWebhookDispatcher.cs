@@ -14,6 +14,7 @@ public class LineWebhookDispatcher : ILineWebhookDispatcher
     private readonly IJoinLeaveHandler _joinLeave;
     private readonly IWebhookMetrics _metrics;
     private readonly ILogger<LineWebhookDispatcher> _logger;
+    private readonly GroupReplyControlService _groupReplyControl;
 
     public LineWebhookDispatcher(
         ITextMessageHandler textMessageHandler,
@@ -25,7 +26,8 @@ public class LineWebhookDispatcher : ILineWebhookDispatcher
         IAdvisoryPostbackHandler advisoryPostback,
         IJoinLeaveHandler joinLeave,
         IWebhookMetrics metrics,
-        ILogger<LineWebhookDispatcher> logger)
+        ILogger<LineWebhookDispatcher> logger,
+        GroupReplyControlService? groupReplyControl = null)
     {
         _textMessageHandler = textMessageHandler;
         _imageMessageHandler = imageMessageHandler;
@@ -37,6 +39,7 @@ public class LineWebhookDispatcher : ILineWebhookDispatcher
         _joinLeave = joinLeave;
         _metrics = metrics;
         _logger = logger;
+        _groupReplyControl = groupReplyControl ?? new GroupReplyControlService();
     }
 
     public Task DispatchAsync(LineEvent evt, string publicBaseUrl, CancellationToken ct)
@@ -72,9 +75,22 @@ public class LineWebhookDispatcher : ILineWebhookDispatcher
             return;
         }
 
+        var groupScopeKey = GroupReplyControlService.GetScopeKey(evt);
+        var groupRepliesPaused = groupScopeKey is not null && _groupReplyControl.IsPaused(groupScopeKey);
+        if (groupRepliesPaused && evt.Message.Type != "text")
+        {
+            _metrics.RecordMessageHandled("group_paused", evt.Source?.Type);
+            _logger.LogDebug(
+                "Skipped non-text group message while replies are paused. EventId={EventId} MessageType={MessageType} SourceType={SourceType}",
+                evt.WebhookEventId,
+                evt.Message.Type,
+                evt.Source?.Type ?? "unknown");
+            return;
+        }
+
         // 顯示讀取動畫（僅對通過 gating 之訊息，fire-and-forget），避免群組未被 mention
         // 或停用群組檔案處理時仍對 LINE 發送無效之 loading 呼叫。
-        if (ShouldShowLoading(evt))
+        if (!groupRepliesPaused && ShouldShowLoading(evt))
             _ = _loading.ShowAsync(evt, ct);
 
         if (await _textMessageHandler.HandleAsync(evt, publicBaseUrl, ct))
