@@ -51,6 +51,7 @@ jobs:
           tags: ghcr.io/arcobaleno64/line-bot:latest
           pull: true
           no-cache: true
+          sbom: true
           build-args: |
             BUILD_COMMIT_SHA=${{ github.sha }}
 

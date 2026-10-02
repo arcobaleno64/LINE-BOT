@@ -107,7 +107,7 @@ public class ForgetConversationCommandTests
         Assert.Empty(history.GetHistory(userKey));
         Assert.False(cache.TryGet(cacheKey, out _));
         Assert.Null(advisoryStore.Get(advisoryToken));
-        Assert.Contains("暫存脈絡", TestFactory.GetLastReplyText(http));
+        Assert.Contains("已清除", TestFactory.GetLastReplyText(http));
         Assert.Equal(0, ai.TextCalls);
     }
 

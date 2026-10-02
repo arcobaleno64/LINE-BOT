@@ -17,7 +17,7 @@ public sealed class WebhookReadinessService(
 
     public WebhookReadinessSnapshot GetSnapshot()
     {
-        var coreServicesReady = _conversationHistory.GetHistory("__readiness__") is not null;
+        var coreServicesReady = _conversationHistory.IsStorageReady;
         var aiTrafficReady = _aiBackoff.TryPass(out var retryAfterSeconds);
         var cooldownActive = !aiTrafficReady;
         var queueSnapshot = _backgroundQueue.GetSnapshot();

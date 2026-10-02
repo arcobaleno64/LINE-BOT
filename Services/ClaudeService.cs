@@ -29,7 +29,7 @@ public class ClaudeService : IAiService
 
     public async Task<string> GetReplyAsync(string userMessage, string userKey, CancellationToken ct = default, bool enableQuickReplies = false)
     {
-        var historyMsgs = _history.GetHistory(userKey)
+        var historyMsgs = (await _history.GetHistoryAsync(userKey, ct))
             .Select(m => new { role = m.Role, content = m.Content })
             .Append(new { role = "user", content = userMessage })
             .ToArray();
@@ -43,7 +43,7 @@ public class ClaudeService : IAiService
         };
         var text = await SendGenerateAsync(payload, ct);
         var parsed = QuickReplySuggestionParser.Parse(text);
-        _history.Append(userKey, userMessage, parsed.MainText);
+        await _history.AppendAsync(userKey, userMessage, parsed.MainText, ct);
         return text;
     }
 

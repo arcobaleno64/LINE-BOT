@@ -51,7 +51,7 @@ public class GeminiService : IAiService
 
     public async Task<string> GetReplyFromImageAsync(byte[] imageBytes, string mimeType, string userPrompt, string userKey, CancellationToken ct = default)
     {
-        var history = _history.GetHistory(userKey)
+        var history = (await _history.GetHistoryAsync(userKey, ct))
             .Select(m => new
             {
                 role = m.Role == "assistant" ? "model" : "user",
@@ -88,7 +88,7 @@ public class GeminiService : IAiService
             ? "[使用者上傳一張圖片，請分析]"
             : $"[使用者上傳一張圖片] {userPrompt}";
 
-        _history.Append(userKey, userInput, text);
+        await _history.AppendAsync(userKey, userInput, text, ct);
         return text;
     }
 
@@ -231,7 +231,7 @@ MIME：{mimeType}
 
     private async Task<string> GetReplyFromTextPromptAsync(string prompt, string userKey, string requestType, CancellationToken ct, bool enableQuickReplies)
     {
-        var contents = _history.GetHistory(userKey)
+        var contents = (await _history.GetHistoryAsync(userKey, ct))
             .Select(m => new
             {
                 role = m.Role == "assistant" ? "model" : "user",
@@ -247,7 +247,7 @@ MIME：{mimeType}
         var payload = BuildPayload(contents, enableQuickReplies);
         var text = await SendWithRetryAsync(payload, requestType, ct);
         var parsed = QuickReplySuggestionParser.Parse(text);
-        _history.Append(userKey, prompt, parsed.MainText);
+        await _history.AppendAsync(userKey, prompt, parsed.MainText, ct);
         return text;
     }
 

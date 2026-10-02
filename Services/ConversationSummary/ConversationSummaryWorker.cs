@@ -25,15 +25,17 @@ public sealed class ConversationSummaryWorker : BackgroundService
 
         try
         {
+            await _history.RequeuePendingSummaryWorkAsync(stoppingToken);
             await foreach (var item in _queue.DequeueAllAsync(stoppingToken))
             {
-                if (!_history.TryGetSummaryRequest(item, out var request) || request is null)
-                    continue;
-
                 try
                 {
+                    var request = await _history.GetSummaryRequestAsync(item, stoppingToken);
+                    if (request is null)
+                        continue;
+
                     var summary = await _generator.GenerateAsync(request.ExistingSummary, request.PendingMessages, stoppingToken);
-                    if (_history.ApplySummarySuccess(request, summary))
+                    if (await _history.ApplySummarySuccessAsync(item, summary, stoppingToken))
                     {
                         _logger.LogInformation(
                             "Conversation summary completed. UserKeyFingerprint={UserKeyFingerprint} PendingCount={PendingCount} MessageCount={MessageCount}",
@@ -51,12 +53,24 @@ public sealed class ConversationSummaryWorker : BackgroundService
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                 {
-                    _history.ApplySummaryFailure(request);
+                    if (string.IsNullOrWhiteSpace(item.UserKeyHash))
+                        await _history.ApplySummaryFailureAsync(item, CancellationToken.None);
                     break;
                 }
                 catch (Exception ex)
                 {
-                    _history.ApplySummaryFailure(request);
+                    try
+                    {
+                        await _history.ApplySummaryFailureAsync(item, CancellationToken.None);
+                    }
+                    catch (Exception persistenceException)
+                    {
+                        _logger.LogError(
+                            "Conversation summary state update failed. UserKeyFingerprint={UserKeyFingerprint} ExceptionType={ExceptionType}",
+                            item.UserKeyFingerprint,
+                            persistenceException.GetType().Name);
+                    }
+
                     var statusCode = SensitiveLogHelpers.GetStatusCode(ex);
                     _logger.LogError(
                         "Conversation summary failed. UserKeyFingerprint={UserKeyFingerprint} PendingCount={PendingCount} MessageCount={MessageCount} StatusCode={StatusCode} ExceptionType={ExceptionType}",
@@ -65,6 +79,23 @@ public sealed class ConversationSummaryWorker : BackgroundService
                         item.MessageCount,
                         statusCode,
                         ex.GetType().Name);
+                }
+                finally
+                {
+                    _queue.Complete(item);
+                    if (!stoppingToken.IsCancellationRequested)
+                    {
+                        try
+                        {
+                            await _history.RequeuePendingSummaryWorkAsync(stoppingToken);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(
+                                "Pending conversation summary scan failed. ExceptionType={ExceptionType}",
+                                ex.GetType().Name);
+                        }
+                    }
                 }
             }
         }

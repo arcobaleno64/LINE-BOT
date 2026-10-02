@@ -5,5 +5,6 @@ public interface IConversationSummaryQueue
     bool TryEnqueue(ConversationSummaryWorkItem item);
     IAsyncEnumerable<ConversationSummaryWorkItem> DequeueAllAsync(CancellationToken cancellationToken);
     ConversationSummaryQueueSnapshot GetSnapshot();
+    void Complete(ConversationSummaryWorkItem item) { }
     void Complete();
 }

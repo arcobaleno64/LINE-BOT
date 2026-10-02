@@ -13,7 +13,7 @@ public class TextMessageHandler : ITextMessageHandler
         • 若已啟用網路搜尋，可查詢最新資訊。
         • 回覆中的延伸按鈕可要求範例、改進方向或搜尋來源。
         • 輸入「管理員測試」可查詢自己是否列入 Bot 管理員名單。
-        • 輸入「忘記對話」可清除你自己的暫存對話脈絡（群組需先提及 Bot）。
+        • 輸入「忘記對話」可清除你自己的對話記憶（群組需先提及 Bot）。
         • Bot 管理員可在群組提及我輸入「暫停回覆 30 分鐘」或「恢復回覆」。
 
         群組／聊天室：請用 LINE「提及」功能標記我再提問；群組圖片目前不處理，群組檔案依管理設定處理。
@@ -131,12 +131,12 @@ public class TextMessageHandler : ITextMessageHandler
 
         if (userText.Trim().Equals("忘記對話", StringComparison.Ordinal))
         {
-            _history.Clear(userKey);
+            await _history.ClearAsync(userKey, ct);
             _aiCache.ClearForUser(userKey);
             _advisoryStore.ClearForUser(userKey);
             var confirmation = evt.Source?.Type is "group" or "room"
-                ? "已清除你在此對話中的暫存脈絡；其他成員不受影響。"
-                : "已清除你在此對話中的暫存脈絡。";
+                ? "已清除你在此對話中的對話記憶；其他成員不受影響。"
+                : "已清除你在此對話中的對話記憶。";
             await _reply.ReplyTextAsync(evt.ReplyToken!, confirmation, logContext, ct);
             return true;
         }

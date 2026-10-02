@@ -7,4 +7,5 @@ public sealed record ConversationSummaryWorkItem(
     string UserKeyFingerprint,
     DateTime EnqueuedAtUtc,
     int PendingCount,
-    int MessageCount);
+    int MessageCount,
+    string? UserKeyHash = null);

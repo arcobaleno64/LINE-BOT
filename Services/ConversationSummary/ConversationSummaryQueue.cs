@@ -8,6 +8,8 @@ public sealed class ConversationSummaryQueue : IConversationSummaryQueue
 
     private readonly Channel<ConversationSummaryWorkItem> _channel;
     private readonly ILogger<ConversationSummaryQueue> _logger;
+    private readonly object _scheduledLock = new();
+    private readonly HashSet<string> _scheduled = [];
     private long _queueDepth;
     private long _totalEnqueued;
     private long _totalDropped;
@@ -26,17 +28,24 @@ public sealed class ConversationSummaryQueue : IConversationSummaryQueue
 
     public bool TryEnqueue(ConversationSummaryWorkItem item)
     {
-        var written = _channel.Writer.TryWrite(item);
-        if (written)
+        lock (_scheduledLock)
         {
-            Interlocked.Increment(ref _totalEnqueued);
-            Interlocked.Increment(ref _queueDepth);
-            _logger.LogDebug(
-                "Conversation summary work enqueued. UserKeyFingerprint={UserKeyFingerprint} PendingCount={PendingCount} MessageCount={MessageCount}",
-                item.UserKeyFingerprint,
-                item.PendingCount,
-                item.MessageCount);
-            return true;
+            var key = GetWorkKey(item);
+            if (_scheduled.Contains(key))
+                return true;
+
+            if (_channel.Writer.TryWrite(item))
+            {
+                _scheduled.Add(key);
+                Interlocked.Increment(ref _totalEnqueued);
+                Interlocked.Increment(ref _queueDepth);
+                _logger.LogDebug(
+                    "Conversation summary work enqueued. UserKeyFingerprint={UserKeyFingerprint} PendingCount={PendingCount} MessageCount={MessageCount}",
+                    item.UserKeyFingerprint,
+                    item.PendingCount,
+                    item.MessageCount);
+                return true;
+            }
         }
 
         Interlocked.Increment(ref _totalDropped);
@@ -46,6 +55,12 @@ public sealed class ConversationSummaryQueue : IConversationSummaryQueue
             item.PendingCount,
             item.MessageCount);
         return false;
+    }
+
+    public void Complete(ConversationSummaryWorkItem item)
+    {
+        lock (_scheduledLock)
+            _scheduled.Remove(GetWorkKey(item));
     }
 
     public async IAsyncEnumerable<ConversationSummaryWorkItem> DequeueAllAsync([System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
@@ -75,4 +90,7 @@ public sealed class ConversationSummaryQueue : IConversationSummaryQueue
     {
         _channel.Writer.TryComplete();
     }
+
+    private static string GetWorkKey(ConversationSummaryWorkItem item)
+        => $"{item.UserKeyHash ?? item.UserKey}:{item.SessionId:N}:{item.SummaryId:N}";
 }

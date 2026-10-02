@@ -31,7 +31,7 @@ public class OpenAiService : IAiService
     public async Task<string> GetReplyAsync(string userMessage, string userKey, CancellationToken ct = default, bool enableQuickReplies = false)
     {
         var systemMsg = new { role = "system", content = BuildSystemPrompt(enableQuickReplies) };
-        var historyMsgs = _history.GetHistory(userKey)
+        var historyMsgs = (await _history.GetHistoryAsync(userKey, ct))
             .Select(m => new { role = m.Role, content = m.Content });
         var messages = new[] { systemMsg }
             .Concat(historyMsgs)
@@ -41,7 +41,7 @@ public class OpenAiService : IAiService
         var payload = new { model = _model, messages, max_tokens = _maxOutputTokens };
         var content = await SendGenerateAsync(payload, ct);
         var parsed = QuickReplySuggestionParser.Parse(content);
-        _history.Append(userKey, userMessage, parsed.MainText);
+        await _history.AppendAsync(userKey, userMessage, parsed.MainText, ct);
         return content;
     }
 

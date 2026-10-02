@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.HttpOverrides;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.RateLimiting;
+using Npgsql;
 
 Environment.SetEnvironmentVariable("DOTNET_HOSTBUILDER__RELOADCONFIGONCHANGE", "false");
 Environment.SetEnvironmentVariable("ASPNETCORE_HOSTBUILDER__RELOADCONFIGONCHANGE", "false");
@@ -18,6 +19,15 @@ builder.Services.AddHttpClient();
 builder.Services.AddSingleton(new PersonaContext(PersonaContext.DefaultPrompt));
 
 // ---------- DI: Conversation History ----------
+var postgresConnectionString = PostgresConversationHistoryStore.ResolveConnectionString(builder.Configuration);
+if (!string.IsNullOrWhiteSpace(postgresConnectionString))
+{
+    builder.Services.AddSingleton(_ => NpgsqlDataSource.Create(postgresConnectionString));
+    builder.Services.AddSingleton<PostgresConversationHistoryStore>();
+    builder.Services.AddHostedService<ConversationHistoryStoreInitializer>();
+    builder.Services.AddHostedService<ConversationHistoryCleanupWorker>();
+}
+
 builder.Services.AddSingleton<IConversationSummaryQueue, ConversationSummaryQueue>();
 builder.Services.AddSingleton<IConversationSummaryGenerator, ConversationSummaryGenerator>();
 builder.Services.AddSingleton<ConversationHistoryService>(sp =>
@@ -25,7 +35,10 @@ builder.Services.AddSingleton<ConversationHistoryService>(sp =>
         sp.GetRequiredService<IConversationSummaryQueue>(),
         sp.GetRequiredService<ILogger<ConversationHistoryService>>(),
         maxRounds: 15,
-        idleMinutes: 480));
+        idleMinutes: 480,
+        persistenceStore: sp.GetService<PostgresConversationHistoryStore>(),
+        conversationKeySecret: builder.Configuration["App:ConversationKeySecret"]
+            ?? builder.Configuration["Line:ChannelSecret"]));
 builder.Services.AddSingleton<IWebhookMetrics, WebhookMetrics>();
 builder.Services.AddSingleton<IWebhookBackgroundQueue, WebhookBackgroundQueue>();
 builder.Services.AddSingleton<IWebhookReadinessService, WebhookReadinessService>();
@@ -178,6 +191,11 @@ builder.Services.AddRateLimiter(options =>
 });
 
 var app = builder.Build();
+if (string.IsNullOrWhiteSpace(postgresConnectionString))
+{
+    app.Logger.LogWarning(
+        "PostgreSQL conversation history is not configured. Conversation context will be process-local until DATABASE_URL or ConnectionStrings:Postgres is set.");
+}
 app.Lifetime.ApplicationStarted.Register(() =>
 {
     app.Services.GetRequiredService<IWebhookReadinessService>().MarkStarted();
