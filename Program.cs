@@ -16,7 +16,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddHttpClient();
 
 // ---------- DI: Assistant identity ----------
-builder.Services.AddSingleton(new PersonaContext(PersonaContext.DefaultPrompt));
+builder.Services.AddSingleton(PersonaContext.FromConfiguration(builder.Configuration));
 
 // ---------- DI: Conversation History ----------
 var postgresConnectionString = PostgresConversationHistoryStore.ResolveConnectionString(builder.Configuration);

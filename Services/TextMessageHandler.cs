@@ -82,6 +82,7 @@ public class TextMessageHandler : ITextMessageHandler
 
         var userKey = MessageHandlerHelpers.BuildUserKey(evt);
         var logContext = WebhookLogContext.FromEvent(evt, HandlerType, userKey);
+        var enablePrivatePersonaPilot = evt.Source?.Type == "user";
         var userText = MentionGateService.StripMention(evt.Message);
         if (evt.Source?.Type == "group" &&
             (userText == "啟用推播" || userText == "停用推播"))
@@ -217,7 +218,12 @@ public class TextMessageHandler : ITextMessageHandler
 [搜尋結果結束]
 """;
 
-            var webAiReply = await MessageHandlerHelpers.TryGetAiReplyAsync(() => _ai.GetReplyAsync(prompt, userKey, ct, enableQuickReplies: true), evt.ReplyToken!, HandlerType, _aiBackoff, _config, _reply, _metrics, _logger, logContext, ct);
+            var webAiReply = await MessageHandlerHelpers.TryGetAiReplyAsync(() => _ai.GetReplyAsync(
+                prompt,
+                userKey,
+                ct,
+                enableQuickReplies: true,
+                enablePrivatePersonaPilot: enablePrivatePersonaPilot), evt.ReplyToken!, HandlerType, _aiBackoff, _config, _reply, _metrics, _logger, logContext, ct);
             if (webAiReply is null)
                 return true;
 
@@ -246,7 +252,7 @@ public class TextMessageHandler : ITextMessageHandler
             return true;
         }
 
-        var textReply = await GetMergedTextReplyAsync(userKey, userText, ct, logContext);
+        var textReply = await GetMergedTextReplyAsync(userKey, userText, ct, logContext, enablePrivatePersonaPilot);
         var parsedReply = QuickReplySuggestionParser.Parse(textReply);
         var advisory = AdvisoryResponseParser.Parse(parsedReply.MainText);
         if (advisory.IsStructured
@@ -320,7 +326,12 @@ public class TextMessageHandler : ITextMessageHandler
         await _reply.ReplyTextAsync(evt.ReplyToken!, confirmation, logContext, ct);
     }
 
-    internal async Task<string> GetMergedTextReplyAsync(string userKey, string userText, CancellationToken ct, WebhookLogContext? logContext = null)
+    internal async Task<string> GetMergedTextReplyAsync(
+        string userKey,
+        string userText,
+        CancellationToken ct,
+        WebhookLogContext? logContext = null,
+        bool enablePrivatePersonaPilot = false)
     {
         var cacheKey = BuildTextCacheKey(userKey, userText);
         if (_aiCache.TryGet(cacheKey, out var cachedReply))
@@ -368,7 +379,12 @@ public class TextMessageHandler : ITextMessageHandler
 
             try
             {
-                var aiReply = await _ai.GetReplyAsync(userText, userKey, ct, enableQuickReplies: true);
+                var aiReply = await _ai.GetReplyAsync(
+                    userText,
+                    userKey,
+                    ct,
+                    enableQuickReplies: true,
+                    enablePrivatePersonaPilot: enablePrivatePersonaPilot);
                 if (string.IsNullOrWhiteSpace(aiReply))
                     return "(AI 無回應)";
 

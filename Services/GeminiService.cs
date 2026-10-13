@@ -44,9 +44,14 @@ public class GeminiService : IAiService
     {
     }
 
-    public async Task<string> GetReplyAsync(string userMessage, string userKey, CancellationToken ct = default, bool enableQuickReplies = false)
+    public async Task<string> GetReplyAsync(
+        string userMessage,
+        string userKey,
+        CancellationToken ct = default,
+        bool enableQuickReplies = false,
+        bool enablePrivatePersonaPilot = false)
     {
-        return await GetReplyFromTextPromptAsync(userMessage, userKey, "text", ct, enableQuickReplies);
+        return await GetReplyFromTextPromptAsync(userMessage, userKey, "text", ct, enableQuickReplies, enablePrivatePersonaPilot);
     }
 
     public async Task<string> GetReplyFromImageAsync(byte[] imageBytes, string mimeType, string userPrompt, string userKey, CancellationToken ct = default)
@@ -129,12 +134,16 @@ MIME：{mimeType}
         return SendWithRetryAsync(payload, "stateless", ct);
     }
 
-    private object BuildPayload(object contents, bool enableQuickReplies) => new
+    private object BuildPayload(
+        object contents,
+        bool enableQuickReplies,
+        string? userKey = null,
+        bool enablePrivatePersonaPilot = false) => new
     {
         contents,
         systemInstruction = new
         {
-            parts = new[] { new { text = BuildSystemPrompt(enableQuickReplies) } }
+            parts = new[] { new { text = BuildSystemPrompt(enableQuickReplies, userKey, enablePrivatePersonaPilot) } }
         },
         generationConfig = new { maxOutputTokens = _maxOutputTokens }
     };
@@ -229,7 +238,13 @@ MIME：{mimeType}
         throw new InvalidOperationException("Gemini API call failed without a captured exception.");
     }
 
-    private async Task<string> GetReplyFromTextPromptAsync(string prompt, string userKey, string requestType, CancellationToken ct, bool enableQuickReplies)
+    private async Task<string> GetReplyFromTextPromptAsync(
+        string prompt,
+        string userKey,
+        string requestType,
+        CancellationToken ct,
+        bool enableQuickReplies,
+        bool enablePrivatePersonaPilot = false)
     {
         var contents = (await _history.GetHistoryAsync(userKey, ct))
             .Select(m => new
@@ -244,16 +259,20 @@ MIME：{mimeType}
             })
             .ToArray();
 
-        var payload = BuildPayload(contents, enableQuickReplies);
+        var mayUsePrivatePilot = requestType == "text" && enablePrivatePersonaPilot;
+        var payload = BuildPayload(contents, enableQuickReplies, userKey, mayUsePrivatePilot);
         var text = await SendWithRetryAsync(payload, requestType, ct);
         var parsed = QuickReplySuggestionParser.Parse(text);
         await _history.AppendAsync(userKey, prompt, parsed.MainText, ct);
         return text;
     }
 
-    private string BuildSystemPrompt(bool enableQuickReplies)
+    private string BuildSystemPrompt(bool enableQuickReplies, string? userKey = null, bool enablePrivatePersonaPilot = false)
     {
-        return LineReplyTextFormatter.BuildSystemPrompt(_persona.SystemPrompt, enableQuickReplies);
+        var basePrompt = userKey is null
+            ? _persona.SystemPrompt
+            : _persona.GetSystemPromptForRequest(userKey, enablePrivatePersonaPilot);
+        return LineReplyTextFormatter.BuildSystemPrompt(basePrompt, enableQuickReplies);
     }
 
     private IEnumerable<GeminiAttempt> BuildAttempts()
