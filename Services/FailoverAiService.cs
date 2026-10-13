@@ -41,9 +41,14 @@ public class FailoverAiService : IAiService
     {
     }
 
-    public Task<string> GetReplyAsync(string userMessage, string userKey, CancellationToken ct = default, bool enableQuickReplies = false)
+    public Task<string> GetReplyAsync(
+        string userMessage,
+        string userKey,
+        CancellationToken ct = default,
+        bool enableQuickReplies = false,
+        bool enablePrivatePersonaPilot = false)
         => ExecuteWithFailoverAsync(
-            provider => provider.Service.GetReplyAsync(userMessage, userKey, ct, enableQuickReplies),
+            provider => provider.Service.GetReplyAsync(userMessage, userKey, ct, enableQuickReplies, enablePrivatePersonaPilot),
             "text");
 
     public Task<string> GetReplyFromImageAsync(byte[] imageBytes, string mimeType, string userPrompt, string userKey, CancellationToken ct = default)

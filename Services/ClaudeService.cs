@@ -27,7 +27,12 @@ public class ClaudeService : IAiService
         _persona  = persona;
     }
 
-    public async Task<string> GetReplyAsync(string userMessage, string userKey, CancellationToken ct = default, bool enableQuickReplies = false)
+    public async Task<string> GetReplyAsync(
+        string userMessage,
+        string userKey,
+        CancellationToken ct = default,
+        bool enableQuickReplies = false,
+        bool enablePrivatePersonaPilot = false)
     {
         var historyMsgs = (await _history.GetHistoryAsync(userKey, ct))
             .Select(m => new { role = m.Role, content = m.Content })
@@ -38,7 +43,7 @@ public class ClaudeService : IAiService
         {
             model      = _model,
             max_tokens = _maxOutputTokens,
-            system     = BuildSystemPrompt(enableQuickReplies),
+            system     = BuildSystemPrompt(enableQuickReplies, userKey, enablePrivatePersonaPilot),
             messages   = historyMsgs
         };
         var text = await SendGenerateAsync(payload, ct);
@@ -74,9 +79,10 @@ MIME：{mimeType}
         return GetReplyAsync(prompt, userKey, ct);
     }
 
-    private string BuildSystemPrompt(bool enableQuickReplies)
+    private string BuildSystemPrompt(bool enableQuickReplies, string userKey, bool enablePrivatePersonaPilot)
     {
-        return LineReplyTextFormatter.BuildSystemPrompt(_persona.SystemPrompt, enableQuickReplies);
+        var basePrompt = _persona.GetSystemPromptForRequest(userKey, enablePrivatePersonaPilot);
+        return LineReplyTextFormatter.BuildSystemPrompt(basePrompt, enableQuickReplies);
     }
 
     public async Task<string> GenerateStatelessReplyAsync(string prompt, CancellationToken ct = default)

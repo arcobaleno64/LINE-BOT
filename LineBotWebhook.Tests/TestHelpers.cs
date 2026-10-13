@@ -25,6 +25,7 @@ internal sealed class RecordingHttpMessageHandler(Func<HttpRequestMessage, Cance
 internal sealed class FakeAiService : IAiService
 {
     public int TextCalls { get; private set; }
+    public List<bool> PrivatePersonaPilotRequests { get; } = [];
     public int ImageCalls { get; private set; }
     public int FileCalls { get; private set; }
 
@@ -40,9 +41,15 @@ internal sealed class FakeAiService : IAiService
     public Func<string, CancellationToken, Task<string>> OnStatelessAsync { get; set; }
         = (prompt, ct) => Task.FromResult("STATELESS-OK");
 
-    public Task<string> GetReplyAsync(string userMessage, string userKey, CancellationToken ct = default, bool enableQuickReplies = false)
+    public Task<string> GetReplyAsync(
+        string userMessage,
+        string userKey,
+        CancellationToken ct = default,
+        bool enableQuickReplies = false,
+        bool enablePrivatePersonaPilot = false)
     {
         TextCalls++;
+        PrivatePersonaPilotRequests.Add(enablePrivatePersonaPilot);
         return OnTextAsync(userMessage, userKey, ct, enableQuickReplies);
     }
 

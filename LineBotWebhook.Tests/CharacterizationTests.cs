@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text.Json;
 using LineBotWebhook.Controllers;
 using LineBotWebhook.Models;
 using LineBotWebhook.Services;
@@ -255,6 +256,98 @@ public class CharacterizationTests
         Assert.NotNull(payload);
         Assert.True(payload!.RootElement.GetProperty("messages")[0].TryGetProperty("quickReply", out var quickReply));
         Assert.Equal(2, quickReply.GetProperty("items").GetArrayLength());
+    }
+
+    [Fact]
+    public async Task PrivatePersonaPilotFlag_IsPassedForPrivateTextOnly()
+    {
+        var config = TestFactory.BuildConfig();
+        var ai = new FakeAiService();
+        var handler = new RecordingHttpMessageHandler((request, ct) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)));
+        var textHandler = TestFactory.CreateTextHandler(config, ai, handler);
+
+        await textHandler.HandleAsync(BuildTextEvent("user", "請協助分析"), "https://unit.test", CancellationToken.None);
+        await textHandler.HandleAsync(BuildTextEvent("group", "@bot 請協助分析", mentioned: true), "https://unit.test", CancellationToken.None);
+        await textHandler.HandleAsync(BuildTextEvent("room", "@bot 請協助分析", mentioned: true), "https://unit.test", CancellationToken.None);
+
+        Assert.Equal([true, false, false], ai.PrivatePersonaPilotRequests);
+    }
+
+    [Fact]
+    public void PersonaContext_RequiresEnabledPrivateRequestAndSingleAllowlistedAdmin()
+    {
+        var config = TestFactory.BuildConfig(new Dictionary<string, string?>
+        {
+            ["App:PrivatePersonaPilotEnabled"] = "true",
+            ["App:PrivatePersonaPilotPrompt"] = "試行推測，可能不準。",
+            ["App:GroupAdminUserIds"] = "owner"
+        });
+        var persona = PersonaContext.FromConfiguration(config);
+
+        var privatePrompt = persona.GetSystemPromptForRequest("owner:owner", isPrivateTextRequest: true);
+        var groupPrompt = persona.GetSystemPromptForRequest("group-1:owner", isPrivateTextRequest: true);
+        var otherUserPrompt = persona.GetSystemPromptForRequest("other:other", isPrivateTextRequest: true);
+        var unrequestedPrompt = persona.GetSystemPromptForRequest("owner:owner", isPrivateTextRequest: false);
+
+        Assert.Contains("試行推測，可能不準。", privatePrompt, StringComparison.Ordinal);
+        Assert.Equal(PersonaContext.DefaultPrompt, groupPrompt);
+        Assert.Equal(PersonaContext.DefaultPrompt, otherUserPrompt);
+        Assert.Equal(PersonaContext.DefaultPrompt, unrequestedPrompt);
+
+        var multipleAdmins = PersonaContext.FromConfiguration(TestFactory.BuildConfig(new Dictionary<string, string?>
+        {
+            ["App:PrivatePersonaPilotEnabled"] = "true",
+            ["App:PrivatePersonaPilotPrompt"] = "試行推測，可能不準。",
+            ["App:GroupAdminUserIds"] = "owner,another-admin"
+        }));
+        Assert.Equal(PersonaContext.DefaultPrompt, multipleAdmins.GetSystemPromptForRequest("owner:owner", true));
+    }
+
+    [Fact]
+    public async Task Gemini_PilotPromptIsAbsentFromGroupAndDocumentRequests()
+    {
+        const string pilotPrompt = "試行推測，可能不準。";
+        var config = TestFactory.BuildConfig(new Dictionary<string, string?>
+        {
+            ["Ai:Gemini:ApiKey"] = "test-gemini-key",
+            ["App:PrivatePersonaPilotEnabled"] = "true",
+            ["App:PrivatePersonaPilotPrompt"] = pilotPrompt,
+            ["App:GroupAdminUserIds"] = "owner"
+        });
+        var requestBodies = new List<string>();
+        var httpHandler = new RecordingHttpMessageHandler(async (request, ct) =>
+        {
+            requestBodies.Add(await request.Content!.ReadAsStringAsync(ct));
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("""{"candidates":[{"content":{"parts":[{"text":"回答"}]}}]}""")
+            };
+        });
+        var service = new GeminiService(
+            new HttpClient(httpHandler),
+            config,
+            new ConversationHistoryService(),
+            PersonaContext.FromConfiguration(config),
+            new TestLogger<GeminiService>());
+
+        await service.GetReplyAsync("私聊提問", "owner:owner", enablePrivatePersonaPilot: true);
+        await service.GetReplyAsync("群組提問", "group-1:owner", enablePrivatePersonaPilot: true);
+        await service.GetReplyFromDocumentAsync("note.txt", "text/plain", "文件內容", "請摘要", "owner:owner");
+
+        Assert.Equal(3, requestBodies.Count);
+        var systemPrompts = requestBodies.Select(body =>
+        {
+            using var document = JsonDocument.Parse(body);
+            return document.RootElement
+                .GetProperty("systemInstruction")
+                .GetProperty("parts")[0]
+                .GetProperty("text")
+                .GetString()!;
+        }).ToArray();
+
+        Assert.Contains(pilotPrompt, systemPrompts[0], StringComparison.Ordinal);
+        Assert.DoesNotContain(pilotPrompt, systemPrompts[1], StringComparison.Ordinal);
+        Assert.DoesNotContain(pilotPrompt, systemPrompts[2], StringComparison.Ordinal);
     }
 
     [Fact]
